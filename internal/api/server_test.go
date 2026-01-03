@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/m0nklabs/oelala-storage/internal/auth"
 	"github.com/m0nklabs/oelala-storage/internal/storage"
 )
 
@@ -336,4 +337,91 @@ func BenchmarkHealthCheck(b *testing.B) {
 		req := httptest.NewRequest("GET", "/health", nil)
 		server.app.Test(req)
 	}
+}
+
+func TestAuthenticatedServer(t *testing.T) {
+	tmpDir := t.TempDir()
+	store, err := storage.NewStore(tmpDir, 100)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
+	authConfig := auth.Config{
+		APIKeys: map[string]*auth.UserContext{
+			"test-api-key": {
+				UserID: "user123",
+				TierID: "pro",
+				Roles:  []string{"write"},
+			},
+		},
+		SkipPaths: []string{"/health", "/status"},
+	}
+
+	server := NewServer(store, 0, WithAuth(authConfig))
+
+	t.Run("health is accessible without auth", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/health", nil)
+		resp, _ := server.app.Test(req)
+
+		if resp.StatusCode != 200 {
+			t.Errorf("Status = %d, want 200", resp.StatusCode)
+		}
+	})
+
+	t.Run("storage requires auth", func(t *testing.T) {
+		req := httptest.NewRequest("PUT", "/bucket/test.txt", strings.NewReader("content"))
+		resp, _ := server.app.Test(req)
+
+		if resp.StatusCode != 401 {
+			t.Errorf("Status = %d, want 401 (Unauthorized)", resp.StatusCode)
+		}
+	})
+
+	t.Run("valid API key allows access", func(t *testing.T) {
+		req := httptest.NewRequest("PUT", "/bucket/test.txt", strings.NewReader("content"))
+		req.Header.Set("X-API-Key", "test-api-key")
+		resp, _ := server.app.Test(req)
+
+		if resp.StatusCode != 201 {
+			body, _ := io.ReadAll(resp.Body)
+			t.Errorf("Status = %d, want 201. Body: %s", resp.StatusCode, body)
+		}
+	})
+
+	t.Run("invalid API key returns 401", func(t *testing.T) {
+		req := httptest.NewRequest("PUT", "/bucket/test.txt", strings.NewReader("content"))
+		req.Header.Set("X-API-Key", "wrong-key")
+		resp, _ := server.app.Test(req)
+
+		if resp.StatusCode != 401 {
+			t.Errorf("Status = %d, want 401 (Unauthorized)", resp.StatusCode)
+		}
+	})
+
+	t.Run("Bearer token auth works", func(t *testing.T) {
+		authConfigWithToken := auth.Config{
+			APIKeys: make(map[string]*auth.UserContext),
+			TokenValidator: func(token string) *auth.UserContext {
+				if token == "valid-jwt-token" {
+					return &auth.UserContext{
+						UserID: "jwt-user",
+						TierID: "creator",
+					}
+				}
+				return nil
+			},
+			SkipPaths: []string{"/health", "/status"},
+		}
+
+		serverWithJWT := NewServer(store, 0, WithAuth(authConfigWithToken))
+
+		req := httptest.NewRequest("PUT", "/bucket/jwt-test.txt", strings.NewReader("jwt content"))
+		req.Header.Set("Authorization", "Bearer valid-jwt-token")
+		resp, _ := serverWithJWT.app.Test(req)
+
+		if resp.StatusCode != 201 {
+			body, _ := io.ReadAll(resp.Body)
+			t.Errorf("Status = %d, want 201. Body: %s", resp.StatusCode, body)
+		}
+	})
 }

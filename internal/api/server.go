@@ -10,18 +10,30 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/m0nklabs/oelala-storage/internal/auth"
 	"github.com/m0nklabs/oelala-storage/internal/storage"
 )
 
 // Server handles HTTP API requests
 type Server struct {
-	app   *fiber.App
-	store *storage.Store
-	port  int
+	app        *fiber.App
+	store      *storage.Store
+	port       int
+	authConfig *auth.Config
+}
+
+// ServerOption configures the server
+type ServerOption func(*Server)
+
+// WithAuth enables authentication
+func WithAuth(config auth.Config) ServerOption {
+	return func(s *Server) {
+		s.authConfig = &config
+	}
 }
 
 // NewServer creates a new API server
-func NewServer(store *storage.Store, port int) *Server {
+func NewServer(store *storage.Store, port int, opts ...ServerOption) *Server {
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
 		BodyLimit:             100 * 1024 * 1024 * 1024, // 100GB max upload
@@ -36,6 +48,16 @@ func NewServer(store *storage.Store, port int) *Server {
 		app:   app,
 		store: store,
 		port:  port,
+	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(s)
+	}
+
+	// Apply auth middleware if configured
+	if s.authConfig != nil {
+		app.Use(auth.New(*s.authConfig))
 	}
 
 	s.setupRoutes()
