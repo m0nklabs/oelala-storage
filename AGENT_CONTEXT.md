@@ -127,11 +127,11 @@ require (
 
 ## ❌ Wat moet nog
 
-### Prioriteit 1 (Core) - Foundation
+### Prioriteit 1 (Core) - Foundation ✅ COMPLEET
 - [x] **Unit tests** - store.go (78.6%), server.go (75%) ✅ Done 2026-01-04
 - [x] **BadgerDB metadata store** - 84.9% coverage ✅ Done 2026-01-04
-- [ ] **Auth middleware** - Token verificatie voor API
-- [ ] **Content-type detection** - MIME types bij upload
+- [x] **Auth middleware** - Token verificatie, tier support, 96.8% coverage ✅ Done 2026-01-04
+- [x] **Content-type detection** - Magic bytes + extension fallback, 83.2% coverage ✅ Done 2026-01-04
 
 ### Prioriteit 2 (Sync) - Multi-device
 - [ ] **gRPC proto definitions** - Sync protocol
