@@ -110,6 +110,33 @@ func TestStorePut(t *testing.T) {
 			t.Error("Hashes should be different for different content")
 		}
 	})
+
+	t.Run("detects content type from magic bytes", func(t *testing.T) {
+		// PNG magic bytes
+		pngData := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+		pngData = append(pngData, []byte("fake png content")...)
+
+		obj, err := store.Put("content-type-bucket", "image.png", bytes.NewReader(pngData))
+		if err != nil {
+			t.Fatalf("Put() error = %v", err)
+		}
+
+		if obj.ContentType != "image/png" {
+			t.Errorf("ContentType = %v, want image/png", obj.ContentType)
+		}
+	})
+
+	t.Run("detects content type from extension fallback", func(t *testing.T) {
+		// No magic bytes, just text
+		obj, err := store.Put("content-type-bucket", "video.mp4", strings.NewReader("fake mp4"))
+		if err != nil {
+			t.Fatalf("Put() error = %v", err)
+		}
+
+		if obj.ContentType != "video/mp4" {
+			t.Errorf("ContentType = %v, want video/mp4", obj.ContentType)
+		}
+	})
 }
 
 func TestStoreGet(t *testing.T) {

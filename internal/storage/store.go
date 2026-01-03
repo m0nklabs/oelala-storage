@@ -49,6 +49,12 @@ func (s *Store) Put(bucket, key string, reader io.Reader) (*Object, error) {
 		return nil, fmt.Errorf("failed to create bucket: %w", err)
 	}
 
+	// Detect content type from first 512 bytes
+	contentType, headerBytes, err := DetectFromReader(reader, key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to detect content type: %w", err)
+	}
+
 	// Create temp file for hashing
 	tmpFile, err := os.CreateTemp(s.basePath, "upload-*")
 	if err != nil {
@@ -61,11 +67,21 @@ func (s *Store) Put(bucket, key string, reader io.Reader) (*Object, error) {
 	hasher := sha256.New()
 	writer := io.MultiWriter(tmpFile, hasher)
 
-	size, err := io.Copy(writer, reader)
+	// Write header bytes first
+	n, err := writer.Write(headerBytes)
+	if err != nil {
+		tmpFile.Close()
+		return nil, fmt.Errorf("failed to write header: %w", err)
+	}
+	size := int64(n)
+
+	// Copy rest of reader
+	copied, err := io.Copy(writer, reader)
 	if err != nil {
 		tmpFile.Close()
 		return nil, fmt.Errorf("failed to write file: %w", err)
 	}
+	size += copied
 	tmpFile.Close()
 
 	hash := hex.EncodeToString(hasher.Sum(nil))
@@ -85,12 +101,13 @@ func (s *Store) Put(bucket, key string, reader io.Reader) (*Object, error) {
 
 	now := time.Now()
 	return &Object{
-		Key:        key,
-		Bucket:     bucket,
-		Size:       size,
-		Hash:       hash,
-		CreatedAt:  now,
-		ModifiedAt: now,
+		Key:         key,
+		Bucket:      bucket,
+		Size:        size,
+		ContentType: contentType,
+		Hash:        hash,
+		CreatedAt:   now,
+		ModifiedAt:  now,
 	}, nil
 }
 
