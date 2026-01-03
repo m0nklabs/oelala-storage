@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package oelala.storage.v1;
+
+option go_package = "github.com/m0nklabs/oelala-storage/api/proto/storagepb";
+
+// SyncService handles peer-to-peer synchronization
+service SyncService {
+  // Handshake establishes connection and exchanges peer info
+  rpc Handshake(HandshakeRequest) returns (HandshakeResponse);
+  
+  // ListObjects returns objects that need syncing
+  rpc ListObjects(ListObjectsRequest) returns (ListObjectsResponse);
+  
+  // GetObject streams object data
+  rpc GetObject(GetObjectRequest) returns (stream ObjectChunk);
+  
+  // PushObject receives object data from peer
+  rpc PushObject(stream ObjectChunk) returns (PushObjectResponse);
+  
+  // SyncStatus returns current sync state
+  rpc SyncStatus(SyncStatusRequest) returns (SyncStatusResponse);
+}
+
+// PeerInfo contains peer identification
+message PeerInfo {
+  string peer_id = 1;
+  string address = 2;
+  int32 port = 3;
+  string version = 4;
+  int64 storage_bytes = 5;
+  int64 object_count = 6;
+}
+
+// HandshakeRequest initiates peer connection
+message HandshakeRequest {
+  PeerInfo peer = 1;
+  repeated string supported_features = 2;
+}
+
+// HandshakeResponse confirms peer connection
+message HandshakeResponse {
+  PeerInfo peer = 1;
+  bool accepted = 2;
+  string reject_reason = 3;
+  repeated string enabled_features = 4;
+}
+
+// ObjectMeta contains object metadata for sync
+message ObjectMeta {
+  string bucket = 1;
+  string key = 2;
+  string hash = 3;  // SHA-256
+  int64 size = 4;
+  string content_type = 5;
+  int64 created_at = 6;  // Unix timestamp
+  int64 modified_at = 7;
+  map<string, string> user_metadata = 8;
+}
+
+// ListObjectsRequest queries objects for sync
+message ListObjectsRequest {
+  string bucket = 1;  // Empty for all buckets
+  string prefix = 2;
+  int64 since_timestamp = 3;  // Only objects modified after this time
+  repeated string exclude_hashes = 4;  // Hashes we already have
+  int32 limit = 5;
+}
+
+// ListObjectsResponse returns objects available for sync
+message ListObjectsResponse {
+  repeated ObjectMeta objects = 1;
+  bool has_more = 2;
+  string continuation_token = 3;
+}
+
+// GetObjectRequest requests object data
+message GetObjectRequest {
+  string bucket = 1;
+  string key = 2;
+  string expected_hash = 3;  // Verify we get the right version
+}
+
+// ObjectChunk streams object data
+message ObjectChunk {
+  oneof payload {
+    ObjectMeta meta = 1;  // First chunk contains metadata
+    bytes data = 2;       // Subsequent chunks contain data
+  }
+}
+
+// PushObjectResponse confirms object received
+message PushObjectResponse {
+  bool success = 1;
+  string hash = 2;  // Hash of received data
+  string error = 3;
+}
+
+// SyncStatusRequest queries sync state
+message SyncStatusRequest {
+  string peer_id = 1;
+}
+
+// SyncStatusResponse returns sync state
+message SyncStatusResponse {
+  int64 last_sync_time = 1;
+  int64 objects_synced = 2;
+  int64 bytes_synced = 3;
+  int64 pending_objects = 4;
+  SyncState state = 5;
+}
+
+// SyncState represents current sync status
+enum SyncState {
+  SYNC_STATE_UNKNOWN = 0;
+  SYNC_STATE_IDLE = 1;
+  SYNC_STATE_SYNCING = 2;
+  SYNC_STATE_ERROR = 3;
+}

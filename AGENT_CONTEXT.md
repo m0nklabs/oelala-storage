@@ -133,30 +133,24 @@ require (
 - [x] **Auth middleware** - Token verificatie, tier support, 96.8% coverage ✅ Done 2026-01-04
 - [x] **Content-type detection** - Magic bytes + extension fallback, 83.2% coverage ✅ Done 2026-01-04
 
-### Prioriteit 2 (Sync) - Multi-device
-- [ ] **gRPC proto definitions** - Sync protocol
-- [ ] **Peer discovery** - mDNS of bootstrap nodes
-- [ ] **Replication engine** - Push/pull sync tussen nodes
+### Prioriteit 2 (Sync) - Multi-device ✅ COMPLEET
+- [x] **gRPC proto definitions** - storage.proto met SyncService ✅ Done 2026-01-04
+- [x] **Peer discovery** - mDNS discovery in internal/sync/discovery.go ✅ Done 2026-01-04
+- [x] **Replication engine** - Push/pull sync in internal/sync/replicator.go ✅ Done 2026-01-04
 
-### Prioriteit 3 (Production) - Stability
-- [ ] **Structured logging** - Zap integration
-- [ ] **Metrics** - Prometheus endpoints
-- [ ] **TLS support** - HTTPS/gRPCS
-- [ ] **Android build testing** - Termux compatibility
+### Prioriteit 3 (Production) - Stability ✅ COMPLEET
+- [x] **Structured logging** - Zap in internal/logging/ ✅ Done 2026-01-04
+- [x] **Metrics** - Prometheus in internal/metrics/ ✅ Done 2026-01-04
+- [x] **TLS support** - Self-signed cert gen in internal/tls/ ✅ Done 2026-01-04
+- [ ] **Android build testing** - Termux compatibility (manual test needed)
 
-### Prioriteit 4 (Monetization-Ready) 💰
-Storage is het **hart** van de monetization strategie. Zonder deze features kun je niet factureren:
-
-| Feature | Waarom Critical | Tier Impact |
-|---------|-----------------|-------------|
-| **User/Tenant isolation** | Multi-user vereist namespace per user | All tiers |
-| **Storage quota tracking** | 2GB free, 50GB creator, 200GB pro, 1TB studio | Upsell trigger |
-| **Usage metering** | Generations + bandwidth + storage bytes | Overage billing |
-| **Retention policies** | 30 days free, unlimited paid | Tier enforcement |
-| **Bandwidth tracking** | Fair use, CDN costs | Studio limits |
-| **Signed URLs** | Tijdelijke shares, expiring links | Premium feature |
-| **Watermark injection** | Free tier watermark on output | Conversion driver |
-| **Content deduplication** | Verlaagt storage costs, hogere marges | Cost optimization |
+### Prioriteit 4 (Monetization-Ready) 💰 ✅ CORE COMPLEET
+- [x] **Storage quota tracking** - internal/quota/tracker.go ✅ Done 2026-01-04
+- [x] **Usage metering** - internal/metering/meter.go ✅ Done 2026-01-04
+- [ ] **Retention policies** - 30 days free, unlimited paid
+- [ ] **Signed URLs** - Tijdelijke shares, expiring links
+- [ ] **Watermark injection** - Free tier watermark on output
+- [ ] **Content deduplication** - Verlaagt storage costs
 
 #### Storage Limits per Tier (uit MONETIZATION.md):
 ```
