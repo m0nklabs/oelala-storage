@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -42,21 +43,21 @@ func NewServer(store *storage.Store, port int) *Server {
 }
 
 func (s *Server) setupRoutes() {
-	// Health check
+	// Health check (most specific first)
 	s.app.Get("/health", s.healthCheck)
 	s.app.Get("/status", s.status)
 
-	// S3-compatible routes
-	s.app.Put("/:bucket/:key", s.putObject)
-	s.app.Get("/:bucket/:key", s.getObject)
-	s.app.Delete("/:bucket/:key", s.deleteObject)
-	s.app.Head("/:bucket/:key", s.headObject)
-	s.app.Get("/:bucket", s.listObjects)
-
-	// Management routes
+	// Management routes (before bucket wildcards)
 	s.app.Get("/peers", s.listPeers)
 	s.app.Post("/peers", s.addPeer)
 	s.app.Delete("/peers/:id", s.removePeer)
+
+	// S3-compatible routes (with wildcard for nested keys)
+	s.app.Put("/:bucket/:key<*>", s.putObject)
+	s.app.Get("/:bucket/:key<*>", s.getObject)
+	s.app.Delete("/:bucket/:key<*>", s.deleteObject)
+	s.app.Head("/:bucket/:key<*>", s.headObject)
+	s.app.Get("/:bucket", s.listObjects)
 }
 
 // Start begins listening for requests
@@ -74,7 +75,7 @@ func (s *Server) Stop() error {
 // Health check endpoint
 func (s *Server) healthCheck(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
-		"status": "healthy",
+		"status":  "healthy",
 		"service": "oelala-storage",
 	})
 }
@@ -99,13 +100,9 @@ func (s *Server) putObject(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create a reader from body
-	reader := c.Context().RequestBodyStream()
-	if reader == nil {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
-			"error": "no request body",
-		})
-	}
+	// Use bytes.Reader for in-memory body (works in tests and small uploads)
+	// For large uploads, streaming would be handled differently
+	reader := bytes.NewReader(body)
 
 	obj, err := s.store.Put(bucket, key, reader)
 	if err != nil {
