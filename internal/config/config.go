@@ -13,6 +13,9 @@ type Config struct {
 	API      APIConfig      `mapstructure:"api"`
 	Sync     SyncConfig     `mapstructure:"sync"`
 	Security SecurityConfig `mapstructure:"security"`
+	Logging  LoggingConfig  `mapstructure:"logging"`
+	Metrics  MetricsConfig  `mapstructure:"metrics"`
+	TLS      TLSConfig      `mapstructure:"tls"`
 }
 
 type NodeConfig struct {
@@ -31,6 +34,23 @@ type APIConfig struct {
 	HTTPPort  int  `mapstructure:"http_port"`
 	GRPCPort  int  `mapstructure:"grpc_port"`
 	EnableTLS bool `mapstructure:"enable_tls"`
+}
+
+type LoggingConfig struct {
+	Level  string `mapstructure:"level"`  // debug, info, warn, error
+	Format string `mapstructure:"format"` // json, console
+}
+
+type MetricsConfig struct {
+	Enabled bool `mapstructure:"enabled"`
+	Port    int  `mapstructure:"port"`
+}
+
+type TLSConfig struct {
+	Enabled  bool   `mapstructure:"enabled"`
+	CertFile string `mapstructure:"cert_file"`
+	KeyFile  string `mapstructure:"key_file"`
+	AutoCert bool   `mapstructure:"auto_cert"` // Generate self-signed if missing
 }
 
 type SyncConfig struct {
@@ -82,6 +102,12 @@ func Load(path string) (*Config, error) {
 	viper.SetDefault("sync.enabled", true)
 	viper.SetDefault("sync.strategy", "realtime")
 	viper.SetDefault("sync.interval_minutes", 15)
+	viper.SetDefault("logging.level", "info")
+	viper.SetDefault("logging.format", "console")
+	viper.SetDefault("metrics.enabled", true)
+	viper.SetDefault("metrics.port", 7992)
+	viper.SetDefault("tls.enabled", false)
+	viper.SetDefault("tls.auto_cert", true)
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {

@@ -2,24 +2,30 @@ package api
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/m0nklabs/oelala-storage/internal/auth"
+	"github.com/m0nklabs/oelala-storage/internal/metrics"
 	"github.com/m0nklabs/oelala-storage/internal/storage"
 )
 
 // Server handles HTTP API requests
 type Server struct {
-	app        *fiber.App
-	store      *storage.Store
-	port       int
-	authConfig *auth.Config
+	app           *fiber.App
+	store         *storage.Store
+	port          int
+	authConfig    *auth.Config
+	tlsConfig     *tls.Config
+	metricsEnabled bool
 }
 
 // ServerOption configures the server
@@ -29,6 +35,20 @@ type ServerOption func(*Server)
 func WithAuth(config auth.Config) ServerOption {
 	return func(s *Server) {
 		s.authConfig = &config
+	}
+}
+
+// WithTLS enables TLS
+func WithTLS(config *tls.Config) ServerOption {
+	return func(s *Server) {
+		s.tlsConfig = config
+	}
+}
+
+// WithMetrics enables metrics middleware
+func WithMetrics() ServerOption {
+	return func(s *Server) {
+		s.metricsEnabled = true
 	}
 }
 
@@ -60,8 +80,26 @@ func NewServer(store *storage.Store, port int, opts ...ServerOption) *Server {
 		app.Use(auth.New(*s.authConfig))
 	}
 
+	// Apply metrics middleware if enabled
+	if s.metricsEnabled {
+		app.Use(metricsMiddleware())
+	}
+
 	s.setupRoutes()
 	return s
+}
+
+// metricsMiddleware records request metrics
+func metricsMiddleware() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		start := time.Now()
+		err := c.Next()
+		duration := time.Since(start).Seconds()
+
+		status := strconv.Itoa(c.Response().StatusCode())
+		metrics.RecordRequest(c.Method(), c.Path(), status, duration)
+		return err
+	}
 }
 
 func (s *Server) setupRoutes() {
@@ -85,6 +123,14 @@ func (s *Server) setupRoutes() {
 // Start begins listening for requests
 func (s *Server) Start() error {
 	addr := fmt.Sprintf(":%d", s.port)
+	if s.tlsConfig != nil {
+		fmt.Printf("📦 HTTPS API listening on %s (TLS enabled)\n", addr)
+		ln, err := tls.Listen("tcp", addr, s.tlsConfig)
+		if err != nil {
+			return err
+		}
+		return s.app.Listener(ln)
+	}
 	fmt.Printf("📦 HTTP API listening on %s\n", addr)
 	return s.app.Listen(addr)
 }

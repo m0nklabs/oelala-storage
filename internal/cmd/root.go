@@ -1,15 +1,24 @@
 package cmd
 
 import (
+	"context"
+	"crypto/tls"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/m0nklabs/oelala-storage/internal/api"
 	"github.com/m0nklabs/oelala-storage/internal/config"
+	"github.com/m0nklabs/oelala-storage/internal/logging"
+	"github.com/m0nklabs/oelala-storage/internal/metrics"
 	"github.com/m0nklabs/oelala-storage/internal/storage"
+	"github.com/m0nklabs/oelala-storage/internal/sync"
+	internaltls "github.com/m0nklabs/oelala-storage/internal/tls"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 var (
@@ -99,10 +108,7 @@ var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Start the storage node",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("🚀 Starting oelala-storage node...")
-		fmt.Printf("Version: %s\n", version)
-
-		// Load config
+		// Load config first
 		configPath := "oelala-storage.yaml"
 		if cfgFile != "" {
 			configPath = cfgFile
@@ -113,7 +119,31 @@ var serveCmd = &cobra.Command{
 			return fmt.Errorf("failed to load config: %w", err)
 		}
 
-		fmt.Printf("📁 Storage path: %s\n", cfg.Storage.Path)
+		// Initialize structured logging
+		logCfg := logging.Config{
+			Level:    cfg.Logging.Level,
+			Encoding: cfg.Logging.Format,
+		}
+		if err := logging.Init(logCfg); err != nil {
+			return fmt.Errorf("failed to init logging: %w", err)
+		}
+		logging.Info("Starting oelala-storage node",
+			zap.String("version", version),
+			zap.String("storage_path", cfg.Storage.Path),
+		)
+
+		// Initialize metrics
+		if cfg.Metrics.Enabled {
+			metrics.Init()
+			go func() {
+				addr := fmt.Sprintf(":%d", cfg.Metrics.Port)
+				logging.Info("Metrics server starting", zap.String("addr", addr))
+				http.Handle("/metrics", metrics.Handler())
+				if err := http.ListenAndServe(addr, nil); err != nil {
+					logging.Error("Metrics server failed", zap.Error(err))
+				}
+			}()
+		}
 
 		// Initialize storage
 		store, err := storage.NewStore(cfg.Storage.Path, cfg.Storage.MaxSizeGB)
@@ -121,8 +151,64 @@ var serveCmd = &cobra.Command{
 			return fmt.Errorf("failed to initialize storage: %w", err)
 		}
 
+		// Setup TLS if enabled
+		var tlsConfig *tls.Config
+		if cfg.TLS.Enabled || cfg.API.EnableTLS {
+			tlsCfg := internaltls.Config{
+				Enabled:  true,
+				CertFile: cfg.TLS.CertFile,
+				KeyFile:  cfg.TLS.KeyFile,
+				AutoCert: cfg.TLS.AutoCert,
+			}
+			tlsConfig, err = internaltls.LoadOrGenerate(tlsCfg)
+			if err != nil {
+				return fmt.Errorf("failed to setup TLS: %w", err)
+			}
+			logging.Info("TLS enabled")
+		}
+
+		// Start gRPC sync server
+		var syncServer *sync.Server
+		var discovery *sync.Discovery
+		var cancelReplicator context.CancelFunc
+		if cfg.Sync.Enabled {
+			syncServer = sync.NewServer(store, cfg.Node.ID, cfg.API.GRPCPort, version)
+			if err := syncServer.Start(); err != nil {
+				return fmt.Errorf("failed to start sync server: %w", err)
+			}
+			logging.Info("gRPC sync server started", zap.Int("port", cfg.API.GRPCPort))
+
+			// Start peer discovery
+			discovery = sync.NewDiscovery(cfg.Node.ID, cfg.API.GRPCPort, version)
+			ctx, cancel := context.WithCancel(context.Background())
+			cancelReplicator = cancel
+			if err := discovery.Start(ctx); err != nil {
+				logging.Warn("Peer discovery failed to start", zap.Error(err))
+			} else {
+				logging.Info("mDNS peer discovery started")
+			}
+
+			// Start replicator
+			replicator := sync.NewReplicator(store, cfg.Node.ID, discovery)
+			interval := time.Duration(cfg.Sync.IntervalMinutes) * time.Minute
+			if interval == 0 {
+				interval = 15 * time.Minute
+			}
+			replicator.SetInterval(interval)
+			go replicator.Start(ctx)
+			logging.Info("Replication engine started", zap.Duration("interval", interval))
+		}
+
 		// Start HTTP server
-		server := api.NewServer(store, cfg.API.HTTPPort)
+		serverOpts := []api.ServerOption{}
+		if tlsConfig != nil {
+			serverOpts = append(serverOpts, api.WithTLS(tlsConfig))
+		}
+		if cfg.Metrics.Enabled {
+			serverOpts = append(serverOpts, api.WithMetrics())
+		}
+
+		server := api.NewServer(store, cfg.API.HTTPPort, serverOpts...)
 
 		// Handle graceful shutdown
 		quit := make(chan os.Signal, 1)
@@ -130,7 +216,16 @@ var serveCmd = &cobra.Command{
 
 		go func() {
 			<-quit
-			fmt.Println("\n🛑 Shutting down...")
+			logging.Info("Shutting down...")
+			if cancelReplicator != nil {
+				cancelReplicator()
+			}
+			if syncServer != nil {
+				syncServer.Stop()
+			}
+			if discovery != nil {
+				discovery.Stop()
+			}
 			server.Stop()
 		}()
 
