@@ -142,6 +142,7 @@ require (
 - [x] **Structured logging** - Zap in internal/logging/ ✅ Done 2026-01-04
 - [x] **Metrics** - Prometheus in internal/metrics/ ✅ Done 2026-01-04
 - [x] **TLS support** - Self-signed cert gen in internal/tls/ ✅ Done 2026-01-04
+- [x] **Server integration** - All packages wired into cmd/root.go ✅ Done 2026-01-04
 - [ ] **Android build testing** - Termux compatibility (manual test needed)
 
 ### Prioriteit 4 (Monetization-Ready) 💰 ✅ CORE COMPLEET
