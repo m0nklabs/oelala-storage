@@ -17,7 +17,8 @@ COPY . .
 # Build binary
 ARG VERSION=dev
 ARG BUILD_TIME
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+ARG TARGETARCH
+RUN CGO_ENABLED=0 go build \
     -ldflags "-X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME} -s -w" \
     -o oelala-storage \
     ./cmd/oelala-storage
@@ -55,5 +56,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:7999/health || exit 1
 
 # Run the binary
+# Note: The application uses sensible defaults when no config file is provided
+# To use a custom config, mount it at: -v /path/to/config.yaml:/app/oelala-storage.yaml
 ENTRYPOINT ["/app/oelala-storage"]
 CMD ["serve"]

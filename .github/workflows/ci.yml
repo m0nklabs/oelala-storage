@@ -44,7 +44,7 @@ jobs:
       - name: Show coverage summary
         run: |
           echo "Coverage Summary:"
-          cat coverage.txt | tail -1
+          tail -1 coverage.txt
           echo ""
           echo "Detailed Coverage:"
           cat coverage.txt

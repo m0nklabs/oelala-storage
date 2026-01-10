@@ -20,7 +20,6 @@ coverage.html
 
 # Documentation
 *.md
-!README.md
 docs/
 
 # IDE
