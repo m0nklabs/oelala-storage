@@ -1,8 +1,9 @@
 # Build stage
 FROM golang:1.24-alpine AS builder
 
-# Install build dependencies
-RUN apk add --no-cache git make
+# Install build dependencies with retry
+RUN apk update && apk add --no-cache git make || \
+    (sleep 5 && apk update && apk add --no-cache git make)
 
 WORKDIR /build
 
@@ -24,8 +25,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 # Runtime stage
 FROM alpine:latest
 
-# Install runtime dependencies
-RUN apk --no-cache add ca-certificates tzdata
+# Install runtime dependencies with retry and update
+RUN apk update && apk --no-cache add ca-certificates tzdata || \
+    (sleep 5 && apk update && apk --no-cache add ca-certificates tzdata)
 
 # Create non-root user
 RUN addgroup -g 1000 oelala && \
