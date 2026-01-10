@@ -18,7 +18,7 @@ COPY . .
 ARG VERSION=dev
 ARG BUILD_TIME
 ARG TARGETARCH
-RUN CGO_ENABLED=0 go build \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
     -ldflags "-X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME} -s -w" \
     -o oelala-storage \
     ./cmd/oelala-storage
