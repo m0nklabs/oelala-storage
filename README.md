@@ -165,7 +165,7 @@ This project uses GitHub Actions for continuous integration and releases:
 
 On every push and pull request:
 - **Tests**: Run full test suite with race detection
-- **Lint**: Check code quality with golangci-lint  
+- **Lint**: Check code quality with golangci-lint
 - **Build**: Cross-compile for all supported platforms
 - **Coverage**: Generate test coverage reports
 
