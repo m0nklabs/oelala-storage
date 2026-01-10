@@ -1,0 +1,71 @@
+# Auto-respond to Copilot PR reviews
+#
+# When Copilot PR Reviewer leaves comments, automatically ask the
+# Copilot Coding Agent to apply the suggested changes.
+# Limited to ONCE per PR to avoid burning Copilot minutes.
+
+name: Auto-Apply Copilot Review
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  auto-apply-review:
+    # Only run for Copilot PR Reviewer reviews with comments
+    if: |
+      github.event.review.user.login == 'copilot-pull-request-reviewer[bot]' &&
+      github.event.review.state == 'COMMENTED' &&
+      github.event.pull_request.user.login == 'copilot-swe-agent[bot]'
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Check if already auto-applied once
+        id: check
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.payload.pull_request.number;
+
+            // Check for any previous auto-apply comment on this PR
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            const hasAutoApplied = comments.data.some(c =>
+              c.body.includes('<!-- auto-apply-copilot-review -->') &&
+              c.user.login === 'github-actions[bot]'
+            );
+
+            if (hasAutoApplied) {
+              console.log('Already auto-applied once on this PR, skipping to save Copilot minutes');
+              core.setOutput('skip', 'true');
+            } else {
+              core.setOutput('skip', 'false');
+            }
+
+      - name: Add comment to apply review suggestions
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const reviewUrl = context.payload.review.html_url;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: `@copilot apply the changes based on the review comments in ${reviewUrl}\n\n<!-- auto-apply-copilot-review -->`
+            });
+
+            console.log('Posted auto-apply comment (first and only time for this PR)');

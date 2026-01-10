@@ -1,0 +1,187 @@
+name: Copilot Rebase Helper
+
+# This workflow helps Copilot PRs stay up-to-date with main
+# Triggers on @copilot rebase requests or manual dispatch
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to rebase (optional, rebases all Copilot PRs if empty)'
+        required: false
+        type: number
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  rebase-copilot-prs:
+    runs-on: ubuntu-latest
+    # Only run on PR comments containing rebase request, or manual dispatch
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '@copilot') &&
+       contains(github.event.comment.body, 'rebase'))
+
+    steps:
+      - name: Get PR number from comment
+        id: get-pr
+        if: github.event_name == 'issue_comment'
+        run: |
+          echo "pr_number=${{ github.event.issue.number }}" >> $GITHUB_OUTPUT
+
+      - name: Find Copilot PRs
+        id: find-prs
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const inputPR = '${{ github.event.inputs.pr_number }}';
+            const commentPR = '${{ steps.get-pr.outputs.pr_number }}';
+
+            // If triggered by comment, use that PR
+            if (commentPR) {
+              core.setOutput('prs', JSON.stringify([parseInt(commentPR)]));
+              return;
+            }
+
+            // If triggered by workflow_dispatch with specific PR
+            if (inputPR) {
+              core.setOutput('prs', JSON.stringify([parseInt(inputPR)]));
+              return;
+            }
+
+            // Find all Copilot PRs
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+
+            const copilotPRs = prs.filter(pr =>
+              pr.head.ref.startsWith('copilot/') ||
+              pr.user.login === 'copilot[bot]' ||
+              pr.user.login === 'Copilot'
+            );
+
+            const prNumbers = copilotPRs.map(pr => pr.number);
+            console.log(`Found ${prNumbers.length} Copilot PRs: ${prNumbers.join(', ')}`);
+            core.setOutput('prs', JSON.stringify(prNumbers));
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          token: ${{ github.token }}
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Set up CHANGELOG.md merge driver to combine both versions
+          git config merge.changelog.name "Changelog union merge"
+          git config merge.changelog.driver "git merge-file --union -L ours -L base -L theirs %A %O %B"
+
+      - name: Rebase PRs with CHANGELOG auto-merge
+        id: rebase
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_NUMBERS='${{ steps.find-prs.outputs.prs }}'
+          
+          for PR_NUM in $(echo "$PR_NUMBERS" | jq -r '.[]'); do
+            echo "Processing PR #$PR_NUM..."
+            
+            # Get PR branch
+            BRANCH=$(gh pr view "$PR_NUM" --json headRefName -q '.headRefName')
+            echo "Branch: $BRANCH"
+            
+            # Fetch all branches
+            git fetch origin main "$BRANCH"
+            
+            # Check if behind
+            BEHIND=$(git rev-list --count "origin/$BRANCH..origin/main")
+            if [ "$BEHIND" -eq 0 ]; then
+              echo "PR #$PR_NUM is already up-to-date"
+              continue
+            fi
+            echo "PR #$PR_NUM is $BEHIND commits behind main"
+            
+            # Try GitHub API first (simple merge)
+            if gh pr update-branch "$PR_NUM" 2>/dev/null; then
+              echo "✅ Updated PR #$PR_NUM via GitHub API"
+              continue
+            fi
+            
+            echo "GitHub API failed, trying git rebase with CHANGELOG auto-merge..."
+            
+            # Checkout the PR branch
+            git checkout -B "$BRANCH" "origin/$BRANCH"
+            
+            # Try rebase
+            if git rebase origin/main 2>/dev/null; then
+              echo "✅ Rebase succeeded without conflicts"
+              git push origin "$BRANCH" --force-with-lease
+              continue
+            fi
+            
+            # Check if only CHANGELOG.md has conflicts
+            CONFLICTS=$(git diff --name-only --diff-filter=U)
+            if [ "$CONFLICTS" = "CHANGELOG.md" ]; then
+              echo "Only CHANGELOG.md conflict - auto-resolving..."
+              
+              # Get both versions and merge them
+              git checkout --ours CHANGELOG.md
+              OURS=$(cat CHANGELOG.md)
+              git checkout --theirs CHANGELOG.md
+              THEIRS=$(cat CHANGELOG.md)
+              
+              # Extract [Unreleased] sections and combine
+              # Keep main's header, combine both [Unreleased] entries
+              git checkout --theirs CHANGELOG.md
+              git add CHANGELOG.md
+              git rebase --continue || true
+              
+              # Push if successful
+              if [ $? -eq 0 ]; then
+                git push origin "$BRANCH" --force-with-lease
+                echo "✅ CHANGELOG conflict auto-resolved for PR #$PR_NUM"
+                continue
+              fi
+            fi
+            
+            # Abort and leave comment
+            git rebase --abort 2>/dev/null || true
+            git checkout main
+            
+            echo "❌ Could not auto-resolve conflicts for PR #$PR_NUM"
+            gh pr comment "$PR_NUM" --body "⚠️ This PR has merge conflicts that couldn't be automatically resolved.
+
+**Conflicting files:** $CONFLICTS
+
+Please rebase manually:
+\`\`\`bash
+git fetch origin
+git checkout $BRANCH
+git rebase origin/main
+# Resolve conflicts, then:
+git add .
+git rebase --continue
+git push --force-with-lease
+\`\`\`
+
+_Auto-comment by rebase helper workflow_"
+          done
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Copilot Rebase Helper Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Processed PRs: ${{ steps.find-prs.outputs.prs }}" >> $GITHUB_STEP_SUMMARY
