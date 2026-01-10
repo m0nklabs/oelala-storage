@@ -26,8 +26,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 FROM alpine:latest
 
 # Install runtime dependencies with retry and update
-RUN apk update && apk --no-cache add ca-certificates tzdata || \
-    (sleep 5 && apk update && apk --no-cache add ca-certificates tzdata)
+RUN apk update && apk --no-cache add ca-certificates tzdata wget || \
+    (sleep 5 && apk update && apk --no-cache add ca-certificates tzdata wget)
 
 # Create non-root user
 RUN addgroup -g 1000 oelala && \
@@ -52,7 +52,7 @@ VOLUME ["/data"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD ["/app/oelala-storage", "health"] || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:7999/health || exit 1
 
 # Run the binary
 ENTRYPOINT ["/app/oelala-storage"]
