@@ -163,11 +163,13 @@ This project uses GitHub Actions for continuous integration and releases:
 
 ### Continuous Integration
 
-On every push and pull request:
-- **Tests**: Run full test suite with race detection
+On every push and pull request to `main`:
 - **Lint**: Check code quality with golangci-lint
-- **Build**: Cross-compile for all supported platforms
-- **Coverage**: Generate test coverage reports
+- **Tests**: Run full test suite with race detection
+- **Coverage**: Generate and upload test coverage reports as artifacts
+- **Build**: Verify binary can be built
+
+All jobs run on self-hosted runner `oelala-storage-runner`.
 
 ### Releases
 
@@ -180,12 +182,32 @@ To create a new release:
    ```
 
 2. GitHub Actions will automatically:
-   - Build binaries for all platforms
-   - Generate a changelog from commits
-   - Create a GitHub release
-   - Upload binaries and checksums
+   - Build binaries for all platforms (Linux, Windows, Android)
+   - Generate checksums for verification
+   - Create automatic changelog from commits
+   - Build multi-platform Docker images (amd64, arm64)
+   - Push Docker images to `ghcr.io/m0nklabs/oelala-storage`
+   - Create a GitHub release with all artifacts
 
 Releases are available at: https://github.com/m0nklabs/oelala-storage/releases
+
+### Docker
+
+Pull and run the latest release:
+
+```bash
+docker pull ghcr.io/m0nklabs/oelala-storage:latest
+docker run -d \
+  -p 7999:7999 -p 7998:7998 \
+  -v /path/to/data:/data \
+  ghcr.io/m0nklabs/oelala-storage:latest
+```
+
+Or use a specific version:
+
+```bash
+docker pull ghcr.io/m0nklabs/oelala-storage:v1.0.0
+```
 
 ## Platforms
 

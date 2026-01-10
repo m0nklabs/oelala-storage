@@ -1,0 +1,57 @@
+# Build stage
+FROM golang:1.24-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache git make
+
+WORKDIR /build
+
+# Copy go mod files
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build binary
+ARG VERSION=dev
+ARG BUILD_TIME
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags "-X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME} -s -w" \
+    -o oelala-storage \
+    ./cmd/oelala-storage
+
+# Runtime stage
+FROM alpine:latest
+
+# Install runtime dependencies
+RUN apk --no-cache add ca-certificates tzdata
+
+# Create non-root user
+RUN addgroup -g 1000 oelala && \
+    adduser -D -u 1000 -G oelala oelala
+
+WORKDIR /app
+
+# Copy binary from builder
+COPY --from=builder /build/oelala-storage /app/
+
+# Create data directory
+RUN mkdir -p /data && chown -R oelala:oelala /data /app
+
+# Switch to non-root user
+USER oelala
+
+# Expose ports
+EXPOSE 7999 7998
+
+# Volume for data
+VOLUME ["/data"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["/app/oelala-storage", "health"] || exit 1
+
+# Run the binary
+ENTRYPOINT ["/app/oelala-storage"]
+CMD ["serve"]
