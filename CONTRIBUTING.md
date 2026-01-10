@@ -6,7 +6,7 @@ Thank you for your interest in contributing to oelala-storage! This guide will h
 
 ### Prerequisites
 
-- Go 1.24 or later
+- Go 1.24+
 - Git
 - golangci-lint (for linting)
 

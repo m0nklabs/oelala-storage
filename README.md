@@ -2,7 +2,7 @@
 
 > Go-based distributed storage service for Oelala
 
-[![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://golang.org)
 [![CI](https://github.com/m0nklabs/oelala-storage/actions/workflows/ci.yml/badge.svg)](https://github.com/m0nklabs/oelala-storage/actions/workflows/ci.yml)
 [![Release](https://github.com/m0nklabs/oelala-storage/actions/workflows/release.yml/badge.svg)](https://github.com/m0nklabs/oelala-storage/actions/workflows/release.yml)
 [![Platforms](https://img.shields.io/badge/Platforms-Windows%20%7C%20Linux%20%7C%20Android-blue)](/)
