@@ -12,13 +12,13 @@ import (
 
 // Object represents a stored file
 type Object struct {
-	Key          string    `json:"key"`
-	Bucket       string    `json:"bucket"`
-	Size         int64     `json:"size"`
-	ContentType  string    `json:"content_type"`
-	Hash         string    `json:"hash"` // SHA-256
-	CreatedAt    time.Time `json:"created_at"`
-	ModifiedAt   time.Time `json:"modified_at"`
+	Key          string            `json:"key"`
+	Bucket       string            `json:"bucket"`
+	Size         int64             `json:"size"`
+	ContentType  string            `json:"content_type"`
+	Hash         string            `json:"hash"` // SHA-256
+	CreatedAt    time.Time         `json:"created_at"`
+	ModifiedAt   time.Time         `json:"modified_at"`
 	UserMetadata map[string]string `json:"user_metadata,omitempty"`
 }
 

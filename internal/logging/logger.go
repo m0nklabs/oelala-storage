@@ -148,8 +148,8 @@ func Fatal(msg string, fields ...zap.Field) {
 }
 
 // Fields helper for common fields
-func String(key, val string) zap.Field   { return zap.String(key, val) }
-func Int(key string, val int) zap.Field  { return zap.Int(key, val) }
-func Int64(key string, val int64) zap.Field { return zap.Int64(key, val) }
-func Err(err error) zap.Field            { return zap.Error(err) }
+func String(key, val string) zap.Field          { return zap.String(key, val) }
+func Int(key string, val int) zap.Field         { return zap.Int(key, val) }
+func Int64(key string, val int64) zap.Field     { return zap.Int64(key, val) }
+func Err(err error) zap.Field                   { return zap.Error(err) }
 func Any(key string, val interface{}) zap.Field { return zap.Any(key, val) }

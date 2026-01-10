@@ -20,11 +20,11 @@ import (
 
 // Server handles HTTP API requests
 type Server struct {
-	app           *fiber.App
-	store         *storage.Store
-	port          int
-	authConfig    *auth.Config
-	tlsConfig     *tls.Config
+	app            *fiber.App
+	store          *storage.Store
+	port           int
+	authConfig     *auth.Config
+	tlsConfig      *tls.Config
 	metricsEnabled bool
 }
 

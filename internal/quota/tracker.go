@@ -57,11 +57,11 @@ func GetTier(id string) *Tier {
 
 // Usage tracks storage usage for a user
 type Usage struct {
-	UserID       string `json:"user_id"`
-	TierID       string `json:"tier_id"`
-	UsedBytes    int64  `json:"used_bytes"`
-	ObjectCount  int64  `json:"object_count"`
-	QuotaBytes   int64  `json:"quota_bytes"`
+	UserID      string `json:"user_id"`
+	TierID      string `json:"tier_id"`
+	UsedBytes   int64  `json:"used_bytes"`
+	ObjectCount int64  `json:"object_count"`
+	QuotaBytes  int64  `json:"quota_bytes"`
 }
 
 // Tracker tracks storage quotas and usage

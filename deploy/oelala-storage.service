@@ -1,0 +1,21 @@
+[Unit]
+Description=Oelala Storage Service
+Documentation=https://github.com/m0nklabs/oelala-storage
+After=network.target
+
+[Service]
+Type=simple
+User=flip
+Group=flip
+WorkingDirectory=/home/flip/oelala-storage
+ExecStart=/home/flip/oelala-storage/bin/oelala-storage serve
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Environment
+Environment=HOME=/home/flip
+
+[Install]
+WantedBy=multi-user.target

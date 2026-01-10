@@ -16,11 +16,11 @@ import (
 
 // ReplicationState tracks sync state with a peer
 type ReplicationState struct {
-	PeerID       string    `json:"peer_id"`
-	LastSync     time.Time `json:"last_sync"`
-	ObjectsSynced int64    `json:"objects_synced"`
-	BytesSynced  int64     `json:"bytes_synced"`
-	Errors       int       `json:"errors"`
+	PeerID        string    `json:"peer_id"`
+	LastSync      time.Time `json:"last_sync"`
+	ObjectsSynced int64     `json:"objects_synced"`
+	BytesSynced   int64     `json:"bytes_synced"`
+	Errors        int       `json:"errors"`
 }
 
 // Replicator handles sync between peers
