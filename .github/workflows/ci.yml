@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint (golangci-lint)
+    runs-on: [self-hosted, Linux, ci, go]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run golangci-lint
+        run: |
+          echo "Go version: $(go version)"
+          echo "golangci-lint version: $(golangci-lint --version)"
+          golangci-lint run --timeout 5m
+
+  test:
+    name: Test
+    runs-on: [self-hosted, Linux, ci, go]
+    needs: lint
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run tests
+        run: |
+          go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Show coverage
+        run: |
+          go tool cover -func=coverage.out | tail -1
+
+  build:
+    name: Build
+    runs-on: [self-hosted, Linux, ci, go]
+    needs: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build binary
+        run: |
+          go build -v -o bin/oelala-storage ./cmd/oelala-storage
+
+      - name: Verify binary
+        run: |
+          ./bin/oelala-storage --help || true
