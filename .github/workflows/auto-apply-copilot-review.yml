@@ -18,7 +18,7 @@ jobs:
       github.event.review.state == 'COMMENTED' &&
       github.event.pull_request.user.login == 'copilot-swe-agent[bot]'
 
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, ci]
 
     permissions:
       pull-requests: write

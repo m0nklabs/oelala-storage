@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   rebase-copilot-prs:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, ci]
     # Only run on PR comments containing rebase request, or manual dispatch
     if: >
       github.event_name == 'workflow_dispatch' ||
