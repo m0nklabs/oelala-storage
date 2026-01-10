@@ -145,7 +145,13 @@ require (
 - [x] **Server integration** - All packages wired into cmd/root.go ✅ Done 2026-01-04
 - [ ] **Android build testing** - Termux compatibility (manual test needed)
 
-### Prioriteit 4 (Monetization-Ready) 💰 ✅ CORE COMPLEET
+### Prioriteit 4 (CI/CD) - Development Infrastructure ✅ COMPLEET
+- [x] **GitHub Actions CI** - Automated testing, linting, builds (#13) ✅ Done 2026-01-10
+- [x] **GitHub Actions Release** - Automated releases with binaries (#14) ✅ Done 2026-01-10
+- [x] **Linting configuration** - golangci-lint setup ✅ Done 2026-01-10
+- [x] **Contributing guidelines** - Development workflow docs ✅ Done 2026-01-10
+
+### Prioriteit 5 (Monetization-Ready) 💰 ✅ CORE COMPLEET
 - [x] **Storage quota tracking** - internal/quota/tracker.go ✅ Done 2026-01-04
 - [x] **Usage metering** - internal/metering/meter.go ✅ Done 2026-01-04
 - [ ] **Retention policies** - 30 days free, unlimited paid

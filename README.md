@@ -2,7 +2,9 @@
 
 > Go-based distributed storage service for Oelala
 
-[![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://golang.org)
+[![CI](https://github.com/m0nklabs/oelala-storage/actions/workflows/ci.yml/badge.svg)](https://github.com/m0nklabs/oelala-storage/actions/workflows/ci.yml)
+[![Release](https://github.com/m0nklabs/oelala-storage/actions/workflows/release.yml/badge.svg)](https://github.com/m0nklabs/oelala-storage/actions/workflows/release.yml)
 [![Platforms](https://img.shields.io/badge/Platforms-Windows%20%7C%20Linux%20%7C%20Android-blue)](/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
@@ -146,9 +148,44 @@ go run cmd/oelala-storage/main.go serve
 # Run tests
 go test ./...
 
+# Run tests with coverage
+make test-coverage
+
 # Lint
 golangci-lint run
+# Or use make
+make lint
 ```
+
+## CI/CD
+
+This project uses GitHub Actions for continuous integration and releases:
+
+### Continuous Integration
+
+On every push and pull request:
+- **Tests**: Run full test suite with race detection
+- **Lint**: Check code quality with golangci-lint
+- **Build**: Cross-compile for all supported platforms
+- **Coverage**: Generate test coverage reports
+
+### Releases
+
+To create a new release:
+
+1. Tag the commit with semantic versioning:
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+
+2. GitHub Actions will automatically:
+   - Build binaries for all platforms
+   - Generate a changelog from commits
+   - Create a GitHub release
+   - Upload binaries and checksums
+
+Releases are available at: https://github.com/m0nklabs/oelala-storage/releases
 
 ## Platforms
 
