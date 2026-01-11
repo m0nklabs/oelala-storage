@@ -151,7 +151,7 @@ func TestStoreGet(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Get() error = %v", err)
 		}
-		defer reader.Close()
+		defer func() { _ = reader.Close() }()
 
 		if obj.Bucket != "get-bucket" {
 			t.Errorf("Bucket = %v, want %v", obj.Bucket, "get-bucket")
@@ -365,7 +365,7 @@ func BenchmarkGet(b *testing.B) {
 		reader, _, _ := store.Get("bench-bucket", "bench.txt")
 		if reader != nil {
 			io.Copy(io.Discard, reader)
-			reader.Close()
+			_ = reader.Close()
 		}
 	}
 }

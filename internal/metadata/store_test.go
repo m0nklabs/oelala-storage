@@ -16,7 +16,7 @@ func setupTestStore(t *testing.T) *Store {
 		t.Fatalf("Failed to create test store: %v", err)
 	}
 	t.Cleanup(func() {
-		store.Close()
+		_ = store.Close()
 	})
 	return store
 }
@@ -35,7 +35,7 @@ func TestNewStore(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewStore() error = %v", err)
 		}
-		defer store.Close()
+		defer func() { _ = store.Close() }()
 		if store == nil {
 			t.Fatal("NewStore() returned nil for in-memory")
 		}
@@ -292,7 +292,7 @@ func TestListExpired(t *testing.T) {
 func BenchmarkPut(b *testing.B) {
 	opts := Options{InMemory: true}
 	store, _ := NewStore(opts)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -308,7 +308,7 @@ func BenchmarkPut(b *testing.B) {
 func BenchmarkGet(b *testing.B) {
 	opts := Options{InMemory: true}
 	store, _ := NewStore(opts)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	meta := &ObjectMeta{
 		Key:    "bench.txt",

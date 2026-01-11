@@ -60,7 +60,7 @@ func TestStatus(t *testing.T) {
 	}
 
 	var body map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&body)
+	_ = json.NewDecoder(resp.Body).Decode(&body)
 
 	if body["status"] != "running" {
 		t.Errorf("status = %v, want 'running'", body["status"])
@@ -247,7 +247,7 @@ func TestListObjects(t *testing.T) {
 		}
 
 		var body map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&body)
+		_ = json.NewDecoder(resp.Body).Decode(&body)
 
 		if body["bucket"] != "list-bucket" {
 			t.Errorf("bucket = %v, want 'list-bucket'", body["bucket"])
@@ -276,7 +276,7 @@ func TestListObjects(t *testing.T) {
 		}
 
 		var body map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&body)
+		_ = json.NewDecoder(resp.Body).Decode(&body)
 
 		if count, ok := body["count"].(float64); ok {
 			if int(count) != 3 {
@@ -300,7 +300,7 @@ func TestPeerManagement(t *testing.T) {
 		}
 
 		var body map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&body)
+		_ = json.NewDecoder(resp.Body).Decode(&body)
 
 		peers := body["peers"].([]interface{})
 		if len(peers) != 0 {
