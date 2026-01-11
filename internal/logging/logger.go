@@ -160,7 +160,7 @@ func Int(key string, val int) zap.Field { return zap.Int(key, val) }
 func Int64(key string, val int64) zap.Field { return zap.Int64(key, val) }
 
 // Err creates an error field for structured logging.
-func Err(err error) zap.Field                   { return zap.Error(err) }
+func Err(err error) zap.Field { return zap.Error(err) }
 
 // Any creates a field for any value type for structured logging.
 func Any(key string, val interface{}) zap.Field { return zap.Any(key, val) }

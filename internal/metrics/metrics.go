@@ -28,6 +28,7 @@ var (
 		[]string{"bucket"},
 	)
 
+	// RequestsTotal tracks the total number of HTTP requests.
 	RequestsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "oelala_storage_requests_total",

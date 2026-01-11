@@ -1,4 +1,6 @@
 // Package api provides HTTP API server implementation for S3-compatible object storage.
+//
+//nolint:revive // api is a meaningful package name for the HTTP API server
 package api
 
 import (
