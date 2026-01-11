@@ -25,6 +25,13 @@ linters-settings:
   errcheck:
     check-blank: true
     check-type-assertions: true
+    exclude-functions:
+      - (io.Closer).Close
+      - (*os.File).Close
+      - os.Remove
+      - os.RemoveAll
+      - fmt.Fprintf
+      - fmt.Fprintln
   
   govet:
     enable-all: true
