@@ -37,6 +37,7 @@ var (
 		[]string{"method", "endpoint", "status"},
 	)
 
+	// RequestDuration tracks HTTP request latency in seconds.
 	RequestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "oelala_storage_request_duration_seconds",
@@ -46,6 +47,7 @@ var (
 		[]string{"method", "endpoint"},
 	)
 
+	// UploadBytes tracks total bytes uploaded per bucket and content type.
 	UploadBytes = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "oelala_storage_upload_bytes_total",
@@ -54,6 +56,7 @@ var (
 		[]string{"bucket", "content_type"},
 	)
 
+	// DownloadBytes tracks total bytes downloaded per bucket.
 	DownloadBytes = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "oelala_storage_download_bytes_total",
@@ -62,6 +65,7 @@ var (
 		[]string{"bucket"},
 	)
 
+	// SyncObjectsTotal tracks total objects synced per peer and direction.
 	SyncObjectsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "oelala_storage_sync_objects_total",
@@ -70,6 +74,7 @@ var (
 		[]string{"peer_id", "direction"},
 	)
 
+	// SyncBytes tracks total bytes synced per peer and direction.
 	SyncBytes = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "oelala_storage_sync_bytes_total",
@@ -78,6 +83,7 @@ var (
 		[]string{"peer_id", "direction"},
 	)
 
+	// SyncErrors tracks total sync errors per peer.
 	SyncErrors = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "oelala_storage_sync_errors_total",
@@ -86,6 +92,7 @@ var (
 		[]string{"peer_id"},
 	)
 
+	// PeersConnected tracks the number of connected peers.
 	PeersConnected = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "oelala_storage_peers_connected",
@@ -93,6 +100,7 @@ var (
 		},
 	)
 
+	// QuotaBytes tracks storage quota in bytes per user and tier.
 	QuotaBytes = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "oelala_storage_quota_bytes",
@@ -101,6 +109,7 @@ var (
 		[]string{"user_id", "tier"},
 	)
 
+	// QuotaUsedBytes tracks storage quota used in bytes per user and tier.
 	QuotaUsedBytes = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "oelala_storage_quota_used_bytes",
