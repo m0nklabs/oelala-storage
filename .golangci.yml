@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   timeout: 5m
   tests: true
@@ -6,17 +8,18 @@ run:
 linters:
   enable:
     - errcheck      # Check for unchecked errors
-    - gosimple      # Simplify code
     - govet         # Vet examines Go source code
     - ineffassign   # Detect ineffectual assignments
-    - staticcheck   # Go static analysis
+    - staticcheck   # Go static analysis (includes gosimple)
     - unused        # Check for unused code
-    - gofmt         # Check code is gofmt-ed
-    - goimports     # Check imports are formatted
     - misspell      # Check for misspelled words
     - gocritic      # Opinionated code checker
     - revive        # Fast, configurable, extensible linter
-    - stylecheck    # Replacement for golint
+
+formatters:
+  enable:
+    - gofmt         # Check code is gofmt-ed
+    - goimports     # Check imports are formatted
 
 linters-settings:
   errcheck:
@@ -43,7 +46,6 @@ linters-settings:
 
 issues:
   exclude-rules:
-    # Exclude test files from certain linters
     - path: _test\.go
       linters:
         - errcheck
