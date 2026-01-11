@@ -44,7 +44,7 @@ func (s *Server) Start() error {
 	s.grpcSrv = grpc.NewServer()
 	pb.RegisterSyncServiceServer(s.grpcSrv, s)
 
-	go s.grpcSrv.Serve(lis)
+	go func() { _ = s.grpcSrv.Serve(lis) }()
 	return nil
 }
 
@@ -121,7 +121,7 @@ func (s *Server) GetObject(req *pb.GetObjectRequest, stream pb.SyncService_GetOb
 	if err != nil {
 		return err
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	// Verify hash if requested
 	if req.ExpectedHash != "" && obj.Hash != req.ExpectedHash {
