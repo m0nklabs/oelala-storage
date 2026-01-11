@@ -197,31 +197,6 @@ Releases are available at: https://github.com/m0nklabs/oelala-storage/releases
 | macOS | - | ❌ Not supported |
 | iOS | - | ❌ Not supported |
 
-## Integration with Oelala
-
-```python
-# In oelala backend (FastAPI)
-import boto3
-
-# Connect to oelala-storage using S3 SDK
-s3 = boto3.client(
-    's3',
-    endpoint_url='http://localhost:7999',
-    aws_access_key_id='oelala',
-    aws_secret_access_key='your-token'
-)
-
-# Upload
-s3.upload_file('video.mp4', 'generated', 'user123/video.mp4')
-
-# Download  
-s3.download_file('generated', 'user123/video.mp4', 'local.mp4')
-```
-
-## Related Projects
-
-- [oelala](https://github.com/m0nklabs/oelala) - Main application (video generation)
-
 ## License
 
 MIT License - see [LICENSE](LICENSE)
