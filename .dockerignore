@@ -29,9 +29,6 @@ docs/
 *.swo
 *~
 
-# CI/CD
-.github/
-
 # Temporary files
 tmp/
 temp/
