@@ -151,13 +151,13 @@ func Fatal(msg string, fields ...zap.Field) {
 // Fields helper for common fields
 
 // String creates a string field for structured logging.
-func String(key, val string) zap.Field          { return zap.String(key, val) }
+func String(key, val string) zap.Field { return zap.String(key, val) }
 
 // Int creates an int field for structured logging.
-func Int(key string, val int) zap.Field         { return zap.Int(key, val) }
+func Int(key string, val int) zap.Field { return zap.Int(key, val) }
 
 // Int64 creates an int64 field for structured logging.
-func Int64(key string, val int64) zap.Field     { return zap.Int64(key, val) }
+func Int64(key string, val int64) zap.Field { return zap.Int64(key, val) }
 
 // Err creates an error field for structured logging.
 func Err(err error) zap.Field                   { return zap.Error(err) }

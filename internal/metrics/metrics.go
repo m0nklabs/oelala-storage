@@ -19,6 +19,7 @@ var (
 		[]string{"bucket"},
 	)
 
+	// StorageBytes tracks total storage used in bytes per bucket.
 	StorageBytes = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "oelala_storage_bytes",

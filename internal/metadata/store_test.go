@@ -104,7 +104,7 @@ func TestDelete(t *testing.T) {
 			Size:   512,
 			UserID: "user-1",
 		}
-		store.Put(meta)
+		_ = store.Put(meta)
 
 		err := store.Delete("del-bucket", "to-delete.txt")
 		if err != nil {
@@ -132,7 +132,7 @@ func TestExists(t *testing.T) {
 			Key:    "exists.txt",
 			Bucket: "check-bucket",
 		}
-		store.Put(meta)
+		_ = store.Put(meta)
 
 		if !store.Exists("check-bucket", "exists.txt") {
 			t.Error("Exists() should return true for existing object")
@@ -156,7 +156,7 @@ func TestListByBucket(t *testing.T) {
 		{Key: "other.txt", Bucket: "other-bucket", Size: 400},
 	}
 	for _, obj := range objects {
-		store.Put(obj)
+		_ = store.Put(obj)
 	}
 
 	t.Run("lists all objects in bucket", func(t *testing.T) {
@@ -192,7 +192,7 @@ func TestListByUser(t *testing.T) {
 		{Key: "no-user.txt", Bucket: "b1", Size: 400},
 	}
 	for _, obj := range objects {
-		store.Put(obj)
+		_ = store.Put(obj)
 	}
 
 	t.Run("lists objects for specific user", func(t *testing.T) {
@@ -228,7 +228,7 @@ func TestGetUserStorageUsed(t *testing.T) {
 		{Key: "other.txt", Bucket: "b1", UserID: "other-user", Size: 9999},
 	}
 	for _, obj := range objects {
-		store.Put(obj)
+		_ = store.Put(obj)
 	}
 
 	t.Run("calculates total storage for user", func(t *testing.T) {
@@ -268,7 +268,7 @@ func TestListExpired(t *testing.T) {
 		{Key: "no-expiry.txt", Bucket: "b1"},
 	}
 	for _, obj := range objects {
-		store.Put(obj)
+		_ = store.Put(obj)
 	}
 
 	t.Run("returns only expired objects", func(t *testing.T) {
@@ -301,7 +301,7 @@ func BenchmarkPut(b *testing.B) {
 			Bucket: "bench",
 			Size:   1024,
 		}
-		store.Put(meta)
+		_ = store.Put(meta)
 	}
 }
 
@@ -315,10 +315,10 @@ func BenchmarkGet(b *testing.B) {
 		Bucket: "bench",
 		Size:   1024,
 	}
-	store.Put(meta)
+	_ = store.Put(meta)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		store.Get("bench", "bench.txt")
+		_, _ = store.Get("bench", "bench.txt")
 	}
 }
