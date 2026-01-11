@@ -5,6 +5,9 @@ on:
     # Run every 2 minutes to quickly handle pending workflows
     - cron: "*/2 * * * *"
   workflow_dispatch:
+  # Trigger immediately when Copilot posts "finished work" comment
+  issue_comment:
+    types: [created]
 
 concurrency:
   group: auto-approve-workflows
@@ -13,6 +16,11 @@ concurrency:
 jobs:
   auto-trigger:
     name: Trigger workflows for blocked Copilot PRs
+    # Only run on schedule/dispatch, OR when comment is from Copilot about finished work
+    if: >
+      github.event_name != 'issue_comment' ||
+      (contains(github.event.comment.user.login, 'copilot') && 
+       contains(github.event.comment.body, 'finished work'))
     runs-on: [self-hosted, Linux, ci, go]
     steps:
       - name: Trigger workflows via dispatch (bypasses approval)
