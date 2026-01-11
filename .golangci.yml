@@ -12,11 +12,14 @@ linters:
     - ineffassign   # Detect ineffectual assignments
     - staticcheck   # Go static analysis (includes gosimple)
     - unused        # Check for unused code
-    - gofmt         # Check code is gofmt-ed
-    - goimports     # Check imports are formatted
     - misspell      # Check for misspelled words
     - gocritic      # Opinionated code checker
     - revive        # Fast, configurable, extensible linter
+
+formatters:
+  enable:
+    - gofmt         # Check code is gofmt-ed
+    - goimports     # Check imports are formatted
 
 linters-settings:
   errcheck:
