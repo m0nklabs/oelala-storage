@@ -1,0 +1,105 @@
+name: Copilot PR Escalation
+
+# Escalate to manual intervention after Copilot fails to fix CI 2 times
+# This workflow monitors Copilot PRs and labels them for human review
+
+on:
+  # Check every 5 minutes
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  check-stuck-prs:
+    name: Check for stuck Copilot PRs
+    runs-on: [self-hosted, Linux, ci, go]
+    steps:
+      - name: Find stuck Copilot PRs
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          echo "Checking for Copilot PRs needing escalation..."
+          
+          # Get all open Copilot PRs
+          COPILOT_PRS=$(gh api repos/${{ github.repository }}/pulls \
+            --jq '[.[] | select(
+              .state == "open" and 
+              (.user.login | ascii_downcase | contains("copilot") or .head.ref | startswith("copilot/"))
+            ) | {number: .number, branch: .head.ref, title: .title}]')
+          
+          COUNT=$(echo "$COPILOT_PRS" | jq 'length')
+          echo "Found $COUNT open Copilot PRs"
+          
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No Copilot PRs to check"
+            exit 0
+          fi
+          
+          # Check each PR for fix request count
+          echo "$COPILOT_PRS" | jq -c '.[]' | while read -r PR; do
+            PR_NUMBER=$(echo "$PR" | jq -r '.number')
+            PR_TITLE=$(echo "$PR" | jq -r '.title')
+            
+            echo "Checking PR #$PR_NUMBER: $PR_TITLE"
+            
+            # Check if already labeled
+            LABELS=$(gh api repos/${{ github.repository }}/issues/$PR_NUMBER/labels --jq '.[].name')
+            if echo "$LABELS" | grep -q "needs-manual-help"; then
+              echo "  Already labeled, skipping"
+              continue
+            fi
+            
+            # Count @copilot fix requests from CI feedback bot
+            TWO_HOURS_AGO=$(date -u -d '2 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+            FIX_REQUESTS=$(gh api repos/${{ github.repository }}/issues/$PR_NUMBER/comments \
+              --jq --arg since "$TWO_HOURS_AGO" '
+                [.[] | select(
+                  (.body | contains("@copilot") and contains("fix")) and
+                  (.created_at > $since)
+                )] | length')
+            
+            echo "  Fix requests in last 2h: $FIX_REQUESTS"
+            
+            # Escalate after 2 failed rounds
+            if [ "$FIX_REQUESTS" -ge 2 ]; then
+              echo "  🚨 Escalating PR #$PR_NUMBER - $FIX_REQUESTS fix attempts failed"
+              
+              # Add label
+              gh api repos/${{ github.repository }}/issues/$PR_NUMBER/labels \
+                -X POST -f "labels[]=needs-manual-help"
+              
+              # Post escalation comment
+              cat <<EOF > /tmp/escalate.md
+          ## 🆘 Manual Intervention Needed
+          
+          Copilot has attempted to fix CI **$FIX_REQUESTS times** without success.
+          
+          **Recommended next steps:**
+          1. Review the [failed CI logs](https://github.com/${{ github.repository }}/pull/$PR_NUMBER/checks)
+          2. Discuss fixes in VS Code Copilot Chat
+          3. Push manual fixes or guide Copilot with specific instructions
+          
+          cc @m0nk1111
+          
+          ---
+          _This PR has been labeled \`needs-manual-help\` and removed from auto-fix loop._
+          EOF
+              
+              gh pr comment "$PR_NUMBER" --body-file /tmp/escalate.md
+              
+              echo "  ✅ Escalated and labeled"
+            fi
+          done
+          
+          echo "Done checking PRs"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Copilot Escalation Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Checked for stuck Copilot PRs needing manual intervention" >> $GITHUB_STEP_SUMMARY

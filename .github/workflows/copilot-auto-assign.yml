@@ -1,0 +1,172 @@
+name: Auto-assign Copilot to Issues
+
+# Automatically assign Copilot to prioritized issues when no Copilot PR is active
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+  pull_request:
+    types: [closed]
+
+permissions:
+  issues: write
+  pull-requests: read
+  contents: read
+
+jobs:
+  assign-copilot:
+    runs-on: [self-hosted, Linux, ci, go]
+    steps:
+      - name: Check for active Copilot PRs
+        id: check-prs
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          # Find open PRs by Copilot
+          COPILOT_PRS=$(gh api repos/${{ github.repository }}/pulls \
+            --jq '[.[] | select(
+              .state == "open" and
+              (.user.login | ascii_downcase | contains("copilot") or .head.ref | startswith("copilot/"))
+            )] | length')
+          
+          echo "Active Copilot PRs: $COPILOT_PRS"
+          
+          if [ "$COPILOT_PRS" -gt 0 ]; then
+            echo "Copilot is busy with an open PR"
+            echo "busy=true" >> $GITHUB_OUTPUT
+          else
+            echo "busy=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Find highest priority unassigned issue
+        id: find-issue
+        if: steps.check-prs.outputs.busy == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          # Get open issues with 'copilot' label, not assigned to Copilot
+          ISSUES=$(gh api repos/${{ github.repository }}/issues \
+            --jq '[.[] | select(
+              .pull_request == null and
+              (.labels | map(.name) | any(. == "copilot")) and
+              (.assignees | map(.login | ascii_downcase) | any(contains("copilot")) | not)
+            ) | {number: .number, title: .title}]')
+          
+          COUNT=$(echo "$ISSUES" | jq 'length')
+          echo "Found $COUNT unassigned copilot-labeled issues"
+          
+          if [ "$COUNT" -eq 0 ]; then
+            echo "found=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Take the oldest (lowest number)
+          ISSUE=$(echo "$ISSUES" | jq -r 'sort_by(.number) | .[0]')
+          ISSUE_NUMBER=$(echo "$ISSUE" | jq -r '.number')
+          ISSUE_TITLE=$(echo "$ISSUE" | jq -r '.title')
+          
+          echo "Selected issue #$ISSUE_NUMBER: $ISSUE_TITLE"
+          echo "found=true" >> $GITHUB_OUTPUT
+          echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
+          echo "issue_title=$ISSUE_TITLE" >> $GITHUB_OUTPUT
+
+      - name: Assign Copilot to issue
+        if: steps.check-prs.outputs.busy == 'false' && steps.find-issue.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          ISSUE_NUMBER=${{ steps.find-issue.outputs.issue_number }}
+          echo "Assigning Copilot to issue #$ISSUE_NUMBER"
+          
+          # Find the Copilot bot ID from suggested actors
+          COPILOT_BOT_ID=$(gh api graphql -f query='
+            query($owner: String!, $name: String!) {
+              repository(owner: $owner, name: $name) {
+                suggestedActors(first: 100, capabilities: CAN_BE_ASSIGNED) {
+                  nodes {
+                    ... on Bot {
+                      id
+                      login
+                    }
+                  }
+                }
+              }
+            }
+          ' -f owner="${{ github.repository_owner }}" -f name="${{ github.event.repository.name }}" \
+            --jq '.data.repository.suggestedActors.nodes[] | select(.login == "copilot-swe-agent") | .id')
+          
+          if [ -z "$COPILOT_BOT_ID" ]; then
+            echo "::warning::Copilot bot not found in suggested actors"
+            echo "Falling back to @copilot mention only"
+            
+            # Just mention Copilot
+            gh issue comment "$ISSUE_NUMBER" --body "@copilot Please implement this issue. Create a fresh branch from main and open a PR when ready.
+
+_Auto-triggered by CI (no active Copilot PRs detected)_"
+            exit 0
+          fi
+          
+          echo "Found Copilot bot with ID: $COPILOT_BOT_ID"
+          
+          # Get the issue's GraphQL ID
+          ISSUE_ID=$(gh api graphql -f query='
+            query($owner: String!, $name: String!, $number: Int!) {
+              repository(owner: $owner, name: $name) {
+                issue(number: $number) {
+                  id
+                }
+              }
+            }
+          ' -f owner="${{ github.repository_owner }}" -f name="${{ github.event.repository.name }}" -F number="$ISSUE_NUMBER" \
+            --jq '.data.repository.issue.id')
+          
+          echo "Issue GraphQL ID: $ISSUE_ID"
+          
+          # Assign Copilot using GraphQL mutation
+          gh api graphql -f query="
+            mutation {
+              replaceActorsForAssignable(input: {
+                assignableId: \"$ISSUE_ID\",
+                actorIds: [\"$COPILOT_BOT_ID\"]
+              }) {
+                assignable {
+                  ... on Issue {
+                    assignees(first: 10) {
+                      nodes { login }
+                    }
+                  }
+                }
+              }
+            }
+          " --jq '.data.replaceActorsForAssignable.assignable.assignees.nodes[].login'
+          
+          echo "Successfully assigned Copilot!"
+
+      - name: Mention Copilot on issue
+        if: steps.check-prs.outputs.busy == 'false' && steps.find-issue.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          ISSUE_NUMBER=${{ steps.find-issue.outputs.issue_number }}
+          
+          gh issue comment "$ISSUE_NUMBER" --body "@copilot Please implement this issue. Create a fresh branch from main and open a PR when ready.
+
+_Auto-triggered by CI (no active Copilot PRs detected)_"
+          
+          echo "Mentioned Copilot on issue #$ISSUE_NUMBER"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Copilot Auto-Assignment" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.check-prs.outputs.busy }}" == "true" ]; then
+            echo "⏳ Copilot is currently busy with an open PR" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.find-issue.outputs.found }}" == "true" ]; then
+            echo "✅ Assigned Copilot to issue #${{ steps.find-issue.outputs.issue_number }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**${{ steps.find-issue.outputs.issue_title }}**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "📭 No unassigned 'copilot' labeled issues found" >> $GITHUB_STEP_SUMMARY
+          fi

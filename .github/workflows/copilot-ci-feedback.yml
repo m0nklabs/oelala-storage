@@ -15,7 +15,7 @@ jobs:
     if: >
       github.event.workflow_run.conclusion == 'failure' &&
       github.event.workflow_run.event == 'pull_request'
-    runs-on: [self-hosted, Linux, ci]
+    runs-on: [self-hosted, Linux, ci, go]
     steps:
       - name: Get PR details
         id: pr
@@ -90,9 +90,9 @@ jobs:
             exit 0
           fi
 
-          MAX_REQUESTS=3
+          MAX_REQUESTS=2
           if [ "$RECENT_FIX_REQUESTS" -ge "$MAX_REQUESTS" ]; then
-            echo "Loop protection: $RECENT_FIX_REQUESTS requests in last 2 hours"
+            echo "Loop protection: $RECENT_FIX_REQUESTS requests in last 2 hours - escalating to manual"
             echo "skip=true" >> $GITHUB_OUTPUT
             echo "reason=loop_protection" >> $GITHUB_OUTPUT
             echo "request_count=$RECENT_FIX_REQUESTS" >> $GITHUB_OUTPUT
@@ -135,13 +135,13 @@ jobs:
 
           [View failed run](${RUN_URL})
 
-          _Auto-fix request ${REQUEST_NUM}/3_
+          _Auto-fix request ${REQUEST_NUM}/2_
           EOF
 
           gh pr comment "$PR_NUMBER" --body-file /tmp/comment.md
           echo "Requested Copilot to fix CI failures on PR #$PR_NUMBER"
 
-      - name: Alert on loop protection triggered
+      - name: Escalate to manual intervention
         if: steps.loop_check.outputs.reason == 'loop_protection'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
@@ -149,13 +149,24 @@ jobs:
           PR_NUMBER="${{ steps.pr.outputs.number }}"
           REQUEST_COUNT="${{ steps.loop_check.outputs.request_count }}"
 
-          cat <<EOF > /tmp/alert.md
-          ⚠️ **Auto-fix limit reached**
+          # Add label for manual intervention
+          gh api repos/${{ github.repository }}/issues/$PR_NUMBER/labels \
+            -X POST -f "labels[]=needs-manual-help" 2>/dev/null || true
 
-          CI has failed ${REQUEST_COUNT}+ times in the last 2 hours. Manual intervention may be required.
+          cat <<EOF > /tmp/alert.md
+          ## 🆘 Escalation: Manual Intervention Required
+
+          Copilot has failed to fix CI after **${REQUEST_COUNT} attempts**. 
+
+          **Next steps:**
+          1. Open VS Code Copilot Chat
+          2. Discuss the remaining issues with Copilot Chat
+          3. Push fixes or provide specific guidance
+
+          The PR has been labeled \`needs-manual-help\`.
 
           cc @m0nk1111
           EOF
 
           gh pr comment "$PR_NUMBER" --body-file /tmp/alert.md
-          echo "Loop protection alert posted on PR #$PR_NUMBER"
+          echo "Escalation posted on PR #$PR_NUMBER"
