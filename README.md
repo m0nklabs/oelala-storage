@@ -76,8 +76,8 @@ storage:
   cache_size_mb: 2048
 
 api:
-  http_port: 7999
-  grpc_port: 7998
+  http_port: 7990
+  grpc_port: 7991
   enable_tls: false
 
 sync:
@@ -198,7 +198,7 @@ Pull and run the latest release:
 ```bash
 docker pull ghcr.io/m0nklabs/oelala-storage:latest
 docker run -d \
-  -p 7999:7999 -p 7998:7998 \
+  -p 7990:7990 -p 7991:7991 \
   -v /path/to/data:/data \
   ghcr.io/m0nklabs/oelala-storage:latest
 ```
@@ -228,7 +228,7 @@ import boto3
 # Connect to oelala-storage using S3 SDK
 s3 = boto3.client(
     's3',
-    endpoint_url='http://localhost:7999',
+    endpoint_url='http://localhost:7990',
     aws_access_key_id='oelala',
     aws_secret_access_key='your-token'
 )

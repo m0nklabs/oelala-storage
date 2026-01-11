@@ -46,14 +46,14 @@ RUN mkdir -p /data && chown -R oelala:oelala /data /app
 USER oelala
 
 # Expose ports
-EXPOSE 7999 7998
+EXPOSE 7990 7991
 
 # Volume for data
 VOLUME ["/data"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:7999/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:7990/health || exit 1
 
 # Run the binary
 # Note: The application uses sensible defaults when no config file is provided
