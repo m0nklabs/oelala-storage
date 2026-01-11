@@ -93,7 +93,8 @@ func TestDetectContentType(t *testing.T) {
 
 func TestDetectFromReader(t *testing.T) {
 	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
-	pngData := append(pngHeader, make([]byte, 100)...)
+	pngData := make([]byte, len(pngHeader)+100)
+	copy(pngData, pngHeader)
 
 	contentType, buf, err := DetectFromReader(bytes.NewReader(pngData), "")
 	if err != nil {

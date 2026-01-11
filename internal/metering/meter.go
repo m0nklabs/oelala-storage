@@ -10,6 +10,7 @@ import (
 type EventType string
 
 const (
+	// EventUpload represents a storage upload event.
 	EventUpload   EventType = "storage.upload"
 	EventDownload EventType = "storage.download"
 	EventDelete   EventType = "storage.delete"

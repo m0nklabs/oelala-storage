@@ -47,7 +47,7 @@ var rootCmd = &cobra.Command{
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		fmt.Printf("oelala-storage %s\n", version)
 		fmt.Printf("Built: %s\n", buildTime)
 	},
@@ -56,7 +56,7 @@ var versionCmd = &cobra.Command{
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize configuration file",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		configPath := "oelala-storage.yaml"
 		if cfgFile != "" {
 			configPath = cfgFile
@@ -108,7 +108,7 @@ security:
 var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Start the storage node",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		// Load config first
 		configPath := "oelala-storage.yaml"
 		if cfgFile != "" {

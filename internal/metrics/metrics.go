@@ -10,6 +10,7 @@ import (
 )
 
 var (
+	// ObjectsTotal tracks the total number of objects stored by bucket.
 	ObjectsTotal = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "oelala_storage_objects_total",

@@ -56,7 +56,7 @@ func (s *Server) Stop() {
 }
 
 // Handshake implements SyncService.Handshake
-func (s *Server) Handshake(_ context.Context, req *pb.HandshakeRequest) (*pb.HandshakeResponse, error) {
+func (s *Server) Handshake(_ context.Context, _ *pb.HandshakeRequest) (*pb.HandshakeResponse, error) {
 	return &pb.HandshakeResponse{
 		Peer:            s.peerInfo,
 		Accepted:        true,
@@ -209,7 +209,7 @@ func (s *Server) PushObject(stream pb.SyncService_PushObjectServer) error {
 }
 
 // SyncStatus implements SyncService.SyncStatus
-func (s *Server) SyncStatus(_ context.Context, req *pb.SyncStatusRequest) (*pb.SyncStatusResponse, error) {
+func (s *Server) SyncStatus(_ context.Context, _ *pb.SyncStatusRequest) (*pb.SyncStatusResponse, error) {
 	return &pb.SyncStatusResponse{
 		State: pb.SyncState_SYNC_STATE_IDLE,
 	}, nil

@@ -125,7 +125,7 @@ func (t *Tracker) AddUsage(userID string, bytes int64) error {
 
 	// Check quota
 	if u.UsedBytes+bytes > u.QuotaBytes {
-		return &QuotaExceededError{
+		return &ExceededError{
 			UserID:    userID,
 			Used:      u.UsedBytes,
 			Requested: bytes,
@@ -164,7 +164,7 @@ func (t *Tracker) CheckQuota(userID string, bytes int64) error {
 	if !ok {
 		tier := GetTier("free")
 		if bytes > tier.QuotaBytes {
-			return &QuotaExceededError{
+			return &ExceededError{
 				UserID:    userID,
 				Used:      0,
 				Requested: bytes,
@@ -175,7 +175,7 @@ func (t *Tracker) CheckQuota(userID string, bytes int64) error {
 	}
 
 	if u.UsedBytes+bytes > u.QuotaBytes {
-		return &QuotaExceededError{
+		return &ExceededError{
 			UserID:    userID,
 			Used:      u.UsedBytes,
 			Requested: bytes,
@@ -198,15 +198,15 @@ func (t *Tracker) GetAllUsage() map[string]*Usage {
 	return result
 }
 
-// QuotaExceededError indicates quota was exceeded
-type QuotaExceededError struct {
+// ExceededError indicates quota was exceeded
+type ExceededError struct {
 	UserID    string
 	Used      int64
 	Requested int64
 	Quota     int64
 }
 
-func (e *QuotaExceededError) Error() string {
+func (e *ExceededError) Error() string {
 	return fmt.Sprintf("quota exceeded: user %s used %d bytes, requested %d, quota %d",
 		e.UserID, e.Used, e.Requested, e.Quota)
 }
