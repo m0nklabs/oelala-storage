@@ -1,3 +1,4 @@
+// Package api provides HTTP API server implementation for S3-compatible object storage.
 package api
 
 import (

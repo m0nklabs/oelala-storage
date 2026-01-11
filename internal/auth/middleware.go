@@ -1,3 +1,4 @@
+// Package auth provides authentication and authorization middleware for the HTTP API.
 package auth
 
 import (

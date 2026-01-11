@@ -1,3 +1,4 @@
+// Package metering provides usage event tracking and metering for billing and analytics.
 package metering
 
 import (
