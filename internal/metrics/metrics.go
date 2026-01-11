@@ -1,3 +1,5 @@
+// Package metrics provides Prometheus metrics collection for oelala-storage.
+// It tracks object storage statistics, HTTP requests, sync operations, and quota usage.
 package metrics
 
 import (
@@ -105,6 +107,8 @@ var (
 	)
 )
 
+// Init registers all Prometheus metrics collectors.
+// Must be called before using any metrics recording functions.
 func Init() {
 	prometheus.MustRegister(
 		ObjectsTotal, StorageBytes, RequestsTotal, RequestDuration,
@@ -113,42 +117,51 @@ func Init() {
 	)
 }
 
+// Handler returns the Prometheus HTTP handler for exposing metrics.
 func Handler() http.Handler {
 	return promhttp.Handler()
 }
 
+// RecordRequest records metrics for an HTTP request.
 func RecordRequest(method, endpoint, status string, duration float64) {
 	RequestsTotal.WithLabelValues(method, endpoint, status).Inc()
 	RequestDuration.WithLabelValues(method, endpoint).Observe(duration)
 }
 
+// RecordUpload records metrics for an object upload operation.
 func RecordUpload(bucket, contentType string, bytes int64) {
 	UploadBytes.WithLabelValues(bucket, contentType).Add(float64(bytes))
 }
 
+// RecordDownload records metrics for an object download operation.
 func RecordDownload(bucket string, bytes int64) {
 	DownloadBytes.WithLabelValues(bucket).Add(float64(bytes))
 }
 
+// RecordSync records metrics for a sync operation with a peer.
 func RecordSync(peerID, direction string, objects int64, bytes int64) {
 	SyncObjectsTotal.WithLabelValues(peerID, direction).Add(float64(objects))
 	SyncBytes.WithLabelValues(peerID, direction).Add(float64(bytes))
 }
 
+// RecordSyncError records a sync error with a specific peer.
 func RecordSyncError(peerID string) {
 	SyncErrors.WithLabelValues(peerID).Inc()
 }
 
+// UpdateStorageMetrics updates the current storage metrics for a bucket.
 func UpdateStorageMetrics(bucket string, objects int64, bytes int64) {
 	ObjectsTotal.WithLabelValues(bucket).Set(float64(objects))
 	StorageBytes.WithLabelValues(bucket).Set(float64(bytes))
 }
 
+// UpdateQuotaMetrics updates quota metrics for a user.
 func UpdateQuotaMetrics(userID, tier string, quota, used int64) {
 	QuotaBytes.WithLabelValues(userID, tier).Set(float64(quota))
 	QuotaUsedBytes.WithLabelValues(userID, tier).Set(float64(used))
 }
 
+// UpdatePeersConnected updates the number of currently connected peers.
 func UpdatePeersConnected(count int) {
 	PeersConnected.Set(float64(count))
 }

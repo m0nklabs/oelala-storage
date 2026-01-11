@@ -1,3 +1,4 @@
+// Package storage provides object storage functionality with content-type detection and deduplication.
 package storage
 
 import (

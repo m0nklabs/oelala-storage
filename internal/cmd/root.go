@@ -224,9 +224,9 @@ var serveCmd = &cobra.Command{
 				syncServer.Stop()
 			}
 			if discovery != nil {
-				discovery.Stop()
+				_ = discovery.Stop()
 			}
-			server.Stop()
+			_ = server.Stop()
 		}()
 
 		return server.Start()

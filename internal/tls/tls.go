@@ -1,3 +1,4 @@
+// Package tls provides TLS certificate generation and management for secure communications.
 package tls
 
 import (
