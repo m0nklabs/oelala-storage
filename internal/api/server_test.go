@@ -60,7 +60,7 @@ func TestStatus(t *testing.T) {
 	}
 
 	var body map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&body)
+	_ = json.NewDecoder(resp.Body).Decode(&body)
 
 	if body["status"] != "running" {
 		t.Errorf("status = %v, want 'running'", body["status"])
@@ -105,7 +105,7 @@ func TestGetObject(t *testing.T) {
 
 	content := "Content to retrieve"
 	putReq := httptest.NewRequest("PUT", "/get-bucket/retrieve.txt", strings.NewReader(content))
-	server.app.Test(putReq)
+	_, _ = server.app.Test(putReq)
 
 	t.Run("retrieves uploaded object", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/get-bucket/retrieve.txt", nil)
@@ -141,7 +141,7 @@ func TestDeleteObject(t *testing.T) {
 	server := setupTestServer(t)
 
 	putReq := httptest.NewRequest("PUT", "/del-bucket/todelete.txt", strings.NewReader("Delete me"))
-	server.app.Test(putReq)
+	_, _ = server.app.Test(putReq)
 
 	t.Run("deletes existing object", func(t *testing.T) {
 		req := httptest.NewRequest("DELETE", "/del-bucket/todelete.txt", nil)
@@ -179,7 +179,7 @@ func TestHeadObject(t *testing.T) {
 
 	content := "Head test content"
 	putReq := httptest.NewRequest("PUT", "/head-bucket/headtest.txt", strings.NewReader(content))
-	server.app.Test(putReq)
+	_, _ = server.app.Test(putReq)
 
 	t.Run("returns metadata for existing object", func(t *testing.T) {
 		req := httptest.NewRequest("HEAD", "/head-bucket/headtest.txt", nil)
@@ -247,7 +247,7 @@ func TestListObjects(t *testing.T) {
 		}
 
 		var body map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&body)
+		_ = json.NewDecoder(resp.Body).Decode(&body)
 
 		if body["bucket"] != "list-bucket" {
 			t.Errorf("bucket = %v, want 'list-bucket'", body["bucket"])
@@ -276,7 +276,7 @@ func TestListObjects(t *testing.T) {
 		}
 
 		var body map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&body)
+		_ = json.NewDecoder(resp.Body).Decode(&body)
 
 		if count, ok := body["count"].(float64); ok {
 			if int(count) != 3 {
@@ -300,7 +300,7 @@ func TestPeerManagement(t *testing.T) {
 		}
 
 		var body map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&body)
+		_ = json.NewDecoder(resp.Body).Decode(&body)
 
 		peers := body["peers"].([]interface{})
 		if len(peers) != 0 {
@@ -335,7 +335,7 @@ func BenchmarkHealthCheck(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		req := httptest.NewRequest("GET", "/health", nil)
-		server.app.Test(req)
+		_, _ = server.app.Test(req)
 	}
 }
 

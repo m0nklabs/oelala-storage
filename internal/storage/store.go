@@ -1,3 +1,4 @@
+// Package storage provides object storage functionality with content-type detection and deduplication.
 package storage
 
 import (
@@ -61,7 +62,7 @@ func (s *Store) Put(bucket, key string, reader io.Reader) (*Object, error) {
 		return nil, fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 
 	// Calculate hash while writing
 	hasher := sha256.New()
@@ -70,7 +71,7 @@ func (s *Store) Put(bucket, key string, reader io.Reader) (*Object, error) {
 	// Write header bytes first
 	n, err := writer.Write(headerBytes)
 	if err != nil {
-		tmpFile.Close()
+		_ = tmpFile.Close()
 		return nil, fmt.Errorf("failed to write header: %w", err)
 	}
 	size := int64(n)
@@ -78,11 +79,11 @@ func (s *Store) Put(bucket, key string, reader io.Reader) (*Object, error) {
 	// Copy rest of reader
 	copied, err := io.Copy(writer, reader)
 	if err != nil {
-		tmpFile.Close()
+		_ = tmpFile.Close()
 		return nil, fmt.Errorf("failed to write file: %w", err)
 	}
 	size += copied
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	hash := hex.EncodeToString(hasher.Sum(nil))
 
@@ -125,7 +126,7 @@ func (s *Store) Get(bucket, key string) (io.ReadCloser, *Object, error) {
 
 	stat, err := file.Stat()
 	if err != nil {
-		file.Close()
+		_ = file.Close()
 		return nil, nil, fmt.Errorf("failed to stat file: %w", err)
 	}
 
@@ -192,13 +193,13 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer source.Close()
+	defer func() { _ = source.Close() }()
 
 	dest, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer dest.Close()
+	defer func() { _ = dest.Close() }()
 
 	_, err = io.Copy(dest, source)
 	return err

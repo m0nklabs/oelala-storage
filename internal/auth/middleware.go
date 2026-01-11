@@ -1,3 +1,4 @@
+// Package auth provides authentication and authorization middleware for the HTTP API.
 package auth
 
 import (
@@ -29,7 +30,7 @@ func DefaultConfig() Config {
 	return Config{
 		APIKeys:   make(map[string]*UserContext),
 		SkipPaths: []string{"/health", "/status"},
-		ErrorHandler: func(c *fiber.Ctx, err error) error {
+		ErrorHandler: func(c *fiber.Ctx, _ error) error {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"error": "unauthorized",
 			})

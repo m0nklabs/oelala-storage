@@ -36,9 +36,28 @@ jobs:
         run: |
           go test -v -race -coverprofile=coverage.out ./...
 
-      - name: Show coverage
+      - name: Generate coverage report
         run: |
-          go tool cover -func=coverage.out | tail -1
+          go tool cover -func=coverage.out -o coverage.txt
+          go tool cover -html=coverage.out -o coverage.html
+
+      - name: Show coverage summary
+        run: |
+          echo "Coverage Summary:"
+          tail -1 coverage.txt
+          echo ""
+          echo "Detailed Coverage:"
+          cat coverage.txt
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            coverage.out
+            coverage.txt
+            coverage.html
+          retention-days: 30
 
   build:
     name: Build

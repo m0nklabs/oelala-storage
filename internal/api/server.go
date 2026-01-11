@@ -1,3 +1,6 @@
+// Package api provides HTTP API server implementation for S3-compatible object storage.
+//
+//nolint:revive // api is a meaningful package name for the HTTP API server
 package api
 
 import (
@@ -193,7 +196,7 @@ func (s *Server) getObject(c *fiber.Ctx) error {
 			"error": err.Error(),
 		})
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	c.Set("Content-Length", fmt.Sprintf("%d", obj.Size))
 	if obj.ContentType != "" {
@@ -232,7 +235,7 @@ func (s *Server) headObject(c *fiber.Ctx) error {
 	if err != nil {
 		return c.SendStatus(http.StatusNotFound)
 	}
-	reader.Close()
+	_ = reader.Close()
 
 	c.Set("Content-Length", fmt.Sprintf("%d", obj.Size))
 	return c.SendStatus(http.StatusOK)

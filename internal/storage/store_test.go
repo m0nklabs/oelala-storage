@@ -145,13 +145,13 @@ func TestStoreGet(t *testing.T) {
 
 	t.Run("retrieves stored file", func(t *testing.T) {
 		content := "Content to retrieve"
-		store.Put("get-bucket", "retrieve.txt", strings.NewReader(content))
+		_, _ = store.Put("get-bucket", "retrieve.txt", strings.NewReader(content))
 
 		reader, obj, err := store.Get("get-bucket", "retrieve.txt")
 		if err != nil {
 			t.Fatalf("Get() error = %v", err)
 		}
-		defer reader.Close()
+		defer func() { _ = reader.Close() }()
 
 		if obj.Bucket != "get-bucket" {
 			t.Errorf("Bucket = %v, want %v", obj.Bucket, "get-bucket")
@@ -195,7 +195,7 @@ func TestStoreDelete(t *testing.T) {
 	store, _ := NewStore(tmpDir, 100)
 
 	t.Run("deletes existing file", func(t *testing.T) {
-		store.Put("delete-bucket", "todelete.txt", strings.NewReader("Delete me"))
+		_, _ = store.Put("delete-bucket", "todelete.txt", strings.NewReader("Delete me"))
 
 		err := store.Delete("delete-bucket", "todelete.txt")
 		if err != nil {
@@ -220,7 +220,7 @@ func TestStoreExists(t *testing.T) {
 	store, _ := NewStore(tmpDir, 100)
 
 	t.Run("returns true for existing file", func(t *testing.T) {
-		store.Put("exists-bucket", "exists.txt", strings.NewReader("I exist"))
+		_, _ = store.Put("exists-bucket", "exists.txt", strings.NewReader("I exist"))
 
 		if !store.Exists("exists-bucket", "exists.txt") {
 			t.Error("Exists() should return true for existing file")
@@ -244,11 +244,11 @@ func TestStoreList(t *testing.T) {
 	tmpDir := t.TempDir()
 	store, _ := NewStore(tmpDir, 100)
 
-	store.Put("list-bucket", "file1.txt", strings.NewReader("File 1"))
-	store.Put("list-bucket", "file2.txt", strings.NewReader("File 2"))
-	store.Put("list-bucket", "images/img1.png", strings.NewReader("Image 1"))
-	store.Put("list-bucket", "images/img2.png", strings.NewReader("Image 2"))
-	store.Put("list-bucket", "docs/readme.md", strings.NewReader("Readme"))
+	_, _ = store.Put("list-bucket", "file1.txt", strings.NewReader("File 1"))
+	_, _ = store.Put("list-bucket", "file2.txt", strings.NewReader("File 2"))
+	_, _ = store.Put("list-bucket", "images/img1.png", strings.NewReader("Image 1"))
+	_, _ = store.Put("list-bucket", "images/img2.png", strings.NewReader("Image 2"))
+	_, _ = store.Put("list-bucket", "docs/readme.md", strings.NewReader("Readme"))
 
 	t.Run("lists all files in bucket", func(t *testing.T) {
 		objects, err := store.List("list-bucket", "")
@@ -350,7 +350,7 @@ func BenchmarkPut(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		key := filepath.Join("bench", string(rune('a'+i%26))+".txt")
-		store.Put("bench-bucket", key, strings.NewReader(content))
+		_, _ = store.Put("bench-bucket", key, strings.NewReader(content))
 	}
 }
 
@@ -358,14 +358,14 @@ func BenchmarkGet(b *testing.B) {
 	tmpDir := b.TempDir()
 	store, _ := NewStore(tmpDir, 100)
 	content := strings.Repeat("x", 1024)
-	store.Put("bench-bucket", "bench.txt", strings.NewReader(content))
+	_, _ = store.Put("bench-bucket", "bench.txt", strings.NewReader(content))
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		reader, _, _ := store.Get("bench-bucket", "bench.txt")
 		if reader != nil {
-			io.Copy(io.Discard, reader)
-			reader.Close()
+			_, _ = io.Copy(io.Discard, reader)
+			_ = reader.Close()
 		}
 	}
 }

@@ -1,3 +1,4 @@
+// Package sync provides peer-to-peer synchronization capabilities for distributed storage.
 package sync
 
 import (
@@ -43,7 +44,7 @@ func (s *Server) Start() error {
 	s.grpcSrv = grpc.NewServer()
 	pb.RegisterSyncServiceServer(s.grpcSrv, s)
 
-	go s.grpcSrv.Serve(lis)
+	go func() { _ = s.grpcSrv.Serve(lis) }()
 	return nil
 }
 
@@ -55,7 +56,7 @@ func (s *Server) Stop() {
 }
 
 // Handshake implements SyncService.Handshake
-func (s *Server) Handshake(ctx context.Context, req *pb.HandshakeRequest) (*pb.HandshakeResponse, error) {
+func (s *Server) Handshake(_ context.Context, _ *pb.HandshakeRequest) (*pb.HandshakeResponse, error) {
 	return &pb.HandshakeResponse{
 		Peer:            s.peerInfo,
 		Accepted:        true,
@@ -64,7 +65,7 @@ func (s *Server) Handshake(ctx context.Context, req *pb.HandshakeRequest) (*pb.H
 }
 
 // ListObjects implements SyncService.ListObjects
-func (s *Server) ListObjects(ctx context.Context, req *pb.ListObjectsRequest) (*pb.ListObjectsResponse, error) {
+func (s *Server) ListObjects(_ context.Context, req *pb.ListObjectsRequest) (*pb.ListObjectsResponse, error) {
 	bucket := req.Bucket
 	if bucket == "" {
 		bucket = "default"
@@ -120,7 +121,7 @@ func (s *Server) GetObject(req *pb.GetObjectRequest, stream pb.SyncService_GetOb
 	if err != nil {
 		return err
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	// Verify hash if requested
 	if req.ExpectedHash != "" && obj.Hash != req.ExpectedHash {
@@ -208,7 +209,7 @@ func (s *Server) PushObject(stream pb.SyncService_PushObjectServer) error {
 }
 
 // SyncStatus implements SyncService.SyncStatus
-func (s *Server) SyncStatus(ctx context.Context, req *pb.SyncStatusRequest) (*pb.SyncStatusResponse, error) {
+func (s *Server) SyncStatus(_ context.Context, _ *pb.SyncStatusRequest) (*pb.SyncStatusResponse, error) {
 	return &pb.SyncStatusResponse{
 		State: pb.SyncState_SYNC_STATE_IDLE,
 	}, nil

@@ -1,3 +1,4 @@
+// Package metadata provides metadata storage and retrieval for objects using BadgerDB.
 package metadata
 
 import (

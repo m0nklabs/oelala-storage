@@ -1,3 +1,4 @@
+// Package cmd provides the command-line interface for oelala-storage.
 package cmd
 
 import (
@@ -27,6 +28,7 @@ var (
 	cfgFile   string
 )
 
+// Execute runs the root command with the provided version and build time.
 func Execute(v, bt string) error {
 	version = v
 	buildTime = bt
@@ -46,7 +48,7 @@ var rootCmd = &cobra.Command{
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, _ []string) {
 		fmt.Printf("oelala-storage %s\n", version)
 		fmt.Printf("Built: %s\n", buildTime)
 	},
@@ -55,7 +57,7 @@ var versionCmd = &cobra.Command{
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize configuration file",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		configPath := "oelala-storage.yaml"
 		if cfgFile != "" {
 			configPath = cfgFile
@@ -107,7 +109,7 @@ security:
 var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Start the storage node",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		// Load config first
 		configPath := "oelala-storage.yaml"
 		if cfgFile != "" {
@@ -224,9 +226,9 @@ var serveCmd = &cobra.Command{
 				syncServer.Stop()
 			}
 			if discovery != nil {
-				discovery.Stop()
+				_ = discovery.Stop()
 			}
-			server.Stop()
+			_ = server.Stop()
 		}()
 
 		return server.Start()

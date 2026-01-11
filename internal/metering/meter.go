@@ -1,3 +1,4 @@
+// Package metering provides usage event tracking and metering for billing and analytics.
 package metering
 
 import (
@@ -9,11 +10,17 @@ import (
 type EventType string
 
 const (
-	EventUpload   EventType = "storage.upload"
+	// EventUpload represents a storage upload event.
+	EventUpload EventType = "storage.upload"
+	// EventDownload represents a storage download event.
 	EventDownload EventType = "storage.download"
-	EventDelete   EventType = "storage.delete"
+	// EventDelete represents a storage deletion event.
+	EventDelete EventType = "storage.delete"
+	// EventGenImage represents an image generation event.
 	EventGenImage EventType = "generation.image"
+	// EventGenVideo represents a video generation event.
 	EventGenVideo EventType = "generation.video"
+	// EventGenAudio represents an audio generation event.
 	EventGenAudio EventType = "generation.audio"
 )
 

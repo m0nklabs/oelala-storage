@@ -67,7 +67,7 @@ func (d *Discovery) Start(ctx context.Context) error {
 // Stop stops the discovery service
 func (d *Discovery) Stop() error {
 	if d.server != nil {
-		d.server.Shutdown()
+		_ = d.server.Shutdown()
 	}
 	return nil
 }
@@ -162,7 +162,7 @@ func (d *Discovery) scan() {
 		WantUnicastResponse: true,
 	}
 
-	mdns.Query(params)
+	_ = mdns.Query(params)
 	close(entriesCh)
 }
 

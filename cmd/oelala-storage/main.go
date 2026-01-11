@@ -1,3 +1,4 @@
+// Package main is the entry point for the oelala-storage application.
 package main
 
 import (

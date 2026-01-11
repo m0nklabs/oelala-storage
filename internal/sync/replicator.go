@@ -106,7 +106,7 @@ func (r *Replicator) syncWithPeer(ctx context.Context, peer *Peer) {
 		state.Errors++
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client := pb.NewSyncServiceClient(conn)
 
@@ -235,7 +235,7 @@ func (r *Replicator) pushToPeer(ctx context.Context, client pb.SyncServiceClient
 						Data: buf[:n],
 					},
 				}); err != nil {
-					reader.Close()
+					_ = reader.Close()
 					return err
 				}
 			}
@@ -243,11 +243,11 @@ func (r *Replicator) pushToPeer(ctx context.Context, client pb.SyncServiceClient
 				break
 			}
 			if err != nil {
-				reader.Close()
+				_ = reader.Close()
 				return err
 			}
 		}
-		reader.Close()
+		_ = reader.Close()
 
 		resp, err := stream.CloseAndRecv()
 		if err != nil {

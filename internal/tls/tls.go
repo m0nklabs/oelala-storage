@@ -1,3 +1,4 @@
+// Package tls provides TLS certificate generation and management for secure communications.
 package tls
 
 import (
@@ -122,7 +123,7 @@ func generateSelfSigned(cfg Config) (*tls.Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cert file: %w", err)
 	}
-	defer certFile.Close()
+	defer func() { _ = certFile.Close() }()
 
 	if err := pem.Encode(certFile, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
 		return nil, fmt.Errorf("failed to write certificate: %w", err)
@@ -133,7 +134,7 @@ func generateSelfSigned(cfg Config) (*tls.Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create key file: %w", err)
 	}
-	defer keyFile.Close()
+	defer func() { _ = keyFile.Close() }()
 
 	keyBytes, err := x509.MarshalECPrivateKey(privateKey)
 	if err != nil {
