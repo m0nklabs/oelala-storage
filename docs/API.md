@@ -774,7 +774,7 @@ Breaking changes will be announced with major version updates.
 
 For issues or questions:
 - GitHub Issues: https://github.com/m0nklabs/oelala-storage/issues
-- Documentation: https://github.com/m0nklabs/oelala-storage/docs
+- Documentation: https://github.com/m0nklabs/oelala-storage/tree/main/docs
 
 ## See Also
 

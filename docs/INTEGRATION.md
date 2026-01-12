@@ -120,11 +120,11 @@ All user files are stored under a user-specific namespace:
 
 ```python
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 def generate_storage_path(user_id: str, media_type: str, extension: str) -> str:
     """Generate a unique storage path for a media file."""
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     unique_id = uuid.uuid4().hex[:8]
     filename = f"{timestamp}_{unique_id}.{extension}"
     return f"/users/{user_id}/media/{media_type}/{filename}"
@@ -409,8 +409,8 @@ except httpx.HTTPStatusError as e:
     if e.response.status_code == 401:
         # Token expired or invalid
         # Refresh Supabase session and retry
-        session = await supabase.auth.refresh_session()
-        headers["Authorization"] = f"Bearer {session.access_token}"
+        result = await supabase.auth.refresh_session()
+        headers["Authorization"] = f"Bearer {result.session.access_token}"
         response = await client.put(url, headers=headers, content=data)
 ```
 
@@ -613,8 +613,8 @@ These events are used for billing and analytics.
 **Solution**:
 ```python
 # Refresh the session
-session = await supabase.auth.refresh_session()
-jwt_token = session.access_token
+result = await supabase.auth.refresh_session()
+jwt_token = result.session.access_token
 ```
 
 ### Issue: 402 Payment Required
