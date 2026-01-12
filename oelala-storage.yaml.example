@@ -1,0 +1,43 @@
+# oelala-storage configuration
+node:
+  id: "oelala-main"
+  name: "Oelala Primary Storage"
+  type: primary
+
+storage:
+  path: "/home/flip/oelala/media"
+  max_size_gb: 500
+  cache_size_mb: 2048
+
+api:
+  http_port: 7990
+  grpc_port: 7991
+  enable_tls: false
+
+sync:
+  enabled: true
+  peers: []
+  strategy: realtime
+  interval_minutes: 15
+
+logging:
+  level: info
+  format: console
+
+metrics:
+  enabled: true
+  port: 7992
+
+tls:
+  enabled: false
+  auto_cert: true
+
+security:
+  encryption_at_rest: false
+  auth_tokens:
+    - name: "oelala-backend"
+      token: "YOUR_API_KEY_HERE"
+      permissions: ["read", "write", "delete"]
+    - name: "readonly"
+      token: ""
+      permissions: ["read"]

@@ -54,9 +54,7 @@ jobs:
           GOOS=windows GOARCH=amd64 go build -ldflags "${LDFLAGS}" \
             -o bin/oelala-storage-windows-amd64.exe ./cmd/oelala-storage
           
-          # Android arm64
-          GOOS=android GOARCH=arm64 go build -ldflags "${LDFLAGS}" \
-            -o bin/oelala-storage-android-arm64 ./cmd/oelala-storage
+          # NOTE: macOS/iOS/Android NOT supported per platform policy
       
       - name: Create checksums
         run: |
@@ -89,7 +87,6 @@ jobs:
           echo "- **Linux (amd64)**: \`oelala-storage-linux-amd64\`" >> CHANGELOG.md
           echo "- **Linux (arm64)**: \`oelala-storage-linux-arm64\`" >> CHANGELOG.md
           echo "- **Windows (amd64)**: \`oelala-storage-windows-amd64.exe\`" >> CHANGELOG.md
-          echo "- **Android (arm64)**: \`oelala-storage-android-arm64\`" >> CHANGELOG.md
           echo "" >> CHANGELOG.md
           echo "## Docker" >> CHANGELOG.md
           echo "" >> CHANGELOG.md
@@ -149,7 +146,6 @@ jobs:
             bin/oelala-storage-linux-amd64
             bin/oelala-storage-linux-arm64
             bin/oelala-storage-windows-amd64.exe
-            bin/oelala-storage-android-arm64
             bin/checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
