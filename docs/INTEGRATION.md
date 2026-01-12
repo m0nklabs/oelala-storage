@@ -502,7 +502,10 @@ async def safe_upload(
             
             # Upload
             result = await storage.upload_generated_media(
-                user_id, jwt_token, file_path, media_type
+                user_id=user_id,
+                jwt_token=jwt_token,
+                file_path=file_path,
+                media_type=media_type
             )
         
         return result
@@ -563,7 +566,10 @@ async def upload_with_logging(
     try:
         async with StorageClient() as storage:
             result = await storage.upload_generated_media(
-                user_id, jwt_token, file_path, media_type
+                user_id=user_id,
+                jwt_token=jwt_token,
+                file_path=file_path,
+                media_type=media_type
             )
         
         logger.info(
