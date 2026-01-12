@@ -36,6 +36,9 @@ security:
   encryption_at_rest: false
   # Admin secret for /admin UI - CHANGE THIS!
   admin_secret: "CHANGE_ME_TO_SOMETHING_SECRET"
+  # Secret for signed URL verification (HMAC-SHA256)
+  # Generate with: openssl rand -hex 32
+  signing_secret: "CHANGE_ME_GENERATE_WITH_openssl_rand_hex_32"
   # Static auth tokens (optional - prefer creating via /admin UI)
   auth_tokens:
     - name: "oelala-backend"

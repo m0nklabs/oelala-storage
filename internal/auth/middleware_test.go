@@ -1,8 +1,12 @@
 package auth
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -246,4 +250,94 @@ func TestGetUserID(t *testing.T) {
 			t.Errorf("UserID = %s, want empty", string(body))
 		}
 	})
+}
+
+func TestSignedURL(t *testing.T) {
+	cfg := Config{
+		APIKeys:       map[string]*UserContext{},
+		SkipPaths:     []string{"/health"},
+		SigningSecret: "test-signing-secret-123",
+	}
+	app := setupTestApp(cfg)
+
+	t.Run("accepts valid signed URL", func(t *testing.T) {
+		// Generate a valid signature
+		path := "/protected"
+		expires := time.Now().Add(1 * time.Hour).Unix()
+		sig := generateTestSignature(path, expires, cfg.SigningSecret)
+
+		req := httptest.NewRequest("GET", path+"?expires="+itoa(expires)+"&sig="+sig, nil)
+		resp, _ := app.Test(req)
+		if resp.StatusCode != 200 {
+			body, _ := io.ReadAll(resp.Body)
+			t.Errorf("Status = %d, want 200. Body: %s", resp.StatusCode, body)
+		}
+	})
+
+	t.Run("rejects expired signed URL", func(t *testing.T) {
+		path := "/protected"
+		expires := time.Now().Add(-1 * time.Hour).Unix() // Expired
+		sig := generateTestSignature(path, expires, cfg.SigningSecret)
+
+		req := httptest.NewRequest("GET", path+"?expires="+itoa(expires)+"&sig="+sig, nil)
+		resp, _ := app.Test(req)
+		if resp.StatusCode != 401 {
+			t.Errorf("Status = %d, want 401 for expired URL", resp.StatusCode)
+		}
+	})
+
+	t.Run("rejects invalid signature", func(t *testing.T) {
+		path := "/protected"
+		expires := time.Now().Add(1 * time.Hour).Unix()
+
+		req := httptest.NewRequest("GET", path+"?expires="+itoa(expires)+"&sig=invalidsig", nil)
+		resp, _ := app.Test(req)
+		if resp.StatusCode != 401 {
+			t.Errorf("Status = %d, want 401 for invalid sig", resp.StatusCode)
+		}
+	})
+
+	t.Run("rejects tampered path", func(t *testing.T) {
+		// Generate signature for one path
+		sigPath := "/protected"
+		expires := time.Now().Add(1 * time.Hour).Unix()
+		sig := generateTestSignature(sigPath, expires, cfg.SigningSecret)
+
+		// Try to use it for a different path
+		req := httptest.NewRequest("GET", "/admin?expires="+itoa(expires)+"&sig="+sig, nil)
+		resp, _ := app.Test(req)
+		if resp.StatusCode != 401 {
+			t.Errorf("Status = %d, want 401 for tampered path", resp.StatusCode)
+		}
+	})
+
+	t.Run("sets anonymous user context for valid signed URL", func(t *testing.T) {
+		path := "/protected"
+		expires := time.Now().Add(1 * time.Hour).Unix()
+		sig := generateTestSignature(path, expires, cfg.SigningSecret)
+
+		req := httptest.NewRequest("GET", path+"?expires="+itoa(expires)+"&sig="+sig, nil)
+		resp, _ := app.Test(req)
+		body, _ := io.ReadAll(resp.Body)
+
+		// Check that user_id is "anonymous"
+		if resp.StatusCode != 200 {
+			t.Errorf("Status = %d, want 200", resp.StatusCode)
+		}
+		if string(body) == "" {
+			t.Error("Expected user context to be set")
+		}
+	})
+}
+
+// Helper function to generate test signature (must match validateSignedURL)
+func generateTestSignature(path string, expires int64, secret string) string {
+	message := path + ":" + strconv.FormatInt(expires, 10)
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(message))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func itoa(n int64) string {
+	return strconv.FormatInt(n, 10)
 }

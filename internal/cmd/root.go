@@ -233,8 +233,9 @@ var serveCmd = &cobra.Command{
 
 		// Configure authentication
 		authCfg := auth.Config{
-			APIKeys:   make(map[string]*auth.UserContext),
-			SkipPaths: []string{"/health", "/status", "/metrics", "/admin", "/admin/"},
+			APIKeys:       make(map[string]*auth.UserContext),
+			SkipPaths:     []string{"/health", "/status", "/metrics", "/admin", "/admin/"},
+			SigningSecret: cfg.Security.SigningSecret, // For signed URL verification
 			// Dynamic key validation via apikeys store
 			TokenValidator: func(token string) *auth.UserContext {
 				// Try dynamic key store first
@@ -260,7 +261,9 @@ var serveCmd = &cobra.Command{
 		}
 
 		serverOpts = append(serverOpts, api.WithAuth(authCfg))
-		logging.Info("Authentication enabled", zap.Int("static_keys", len(authCfg.APIKeys)))
+		logging.Info("Authentication enabled",
+			zap.Int("static_keys", len(authCfg.APIKeys)),
+			zap.Bool("signed_urls", cfg.Security.SigningSecret != ""))
 
 		server := api.NewServer(store, cfg.API.HTTPPort, serverOpts...)
 

@@ -2,7 +2,11 @@
 package auth
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +27,7 @@ type Config struct {
 	TokenValidator func(token string) *UserContext
 	SkipPaths      []string
 	ErrorHandler   fiber.ErrorHandler
+	SigningSecret  string // For signed URL verification (HMAC-SHA256)
 }
 
 // DefaultConfig returns default auth configuration
@@ -57,6 +62,18 @@ func New(config ...Config) fiber.Handler {
 			if path == skip || strings.HasPrefix(path, skip) {
 				return c.Next()
 			}
+		}
+
+		// Check for signed URL authentication (public access via signature)
+		expires := c.Query("expires")
+		sig := c.Query("sig")
+		if expires != "" && sig != "" && cfg.SigningSecret != "" {
+			if user := validateSignedURL(path, expires, sig, cfg.SigningSecret); user != nil {
+				c.Locals(contextKey, user)
+				return c.Next()
+			}
+			// Invalid signature - return 401
+			return cfg.ErrorHandler(c, fiber.ErrUnauthorized)
 		}
 
 		auth := c.Get("Authorization")
@@ -111,6 +128,42 @@ func validateAPIKey(keys map[string]*UserContext, key string) *UserContext {
 		}
 	}
 	return nil
+}
+
+// validateSignedURL verifies a signed URL and returns a temporary user context if valid.
+// The signature is HMAC-SHA256(path:expires, secret) encoded as hex.
+// Returns nil if signature is invalid or URL has expired.
+func validateSignedURL(path, expiresStr, sig, secret string) *UserContext {
+	// Parse expiration timestamp
+	expiresUnix, err := strconv.ParseInt(expiresStr, 10, 64)
+	if err != nil {
+		return nil
+	}
+
+	// Check if URL has expired
+	expiresTime := time.Unix(expiresUnix, 0)
+	if time.Now().After(expiresTime) {
+		return nil
+	}
+
+	// Compute expected signature: HMAC-SHA256(path:expires, secret)
+	message := path + ":" + expiresStr
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(message))
+	expectedSig := hex.EncodeToString(mac.Sum(nil))
+
+	// Constant-time comparison to prevent timing attacks
+	if subtle.ConstantTimeCompare([]byte(sig), []byte(expectedSig)) != 1 {
+		return nil
+	}
+
+	// Valid signature - return a temporary user context for public/anonymous access
+	return &UserContext{
+		UserID:    "anonymous",
+		TierID:    "public",
+		Roles:     []string{"reader"}, // Read-only access
+		ExpiresAt: expiresTime,
+	}
 }
 
 // GetUser retrieves the authenticated user from the request context
