@@ -34,6 +34,9 @@ tls:
 
 security:
   encryption_at_rest: false
+  # Admin secret for /admin UI - CHANGE THIS!
+  admin_secret: "CHANGE_ME_TO_SOMETHING_SECRET"
+  # Static auth tokens (optional - prefer creating via /admin UI)
   auth_tokens:
     - name: "oelala-backend"
       token: "YOUR_API_KEY_HERE"

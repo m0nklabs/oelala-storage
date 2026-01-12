@@ -31,6 +31,7 @@ type Server struct {
 	authConfig     *auth.Config
 	tlsConfig      *tls.Config
 	metricsEnabled bool
+	adminServer    *AdminServer
 }
 
 // ServerOption configures the server
@@ -64,6 +65,13 @@ func WithBucketStore(bs *bucket.Store) ServerOption {
 	}
 }
 
+// WithAdminServer sets the admin server for API key management
+func WithAdminServer(admin *AdminServer) ServerOption {
+	return func(s *Server) {
+		s.adminServer = admin
+	}
+}
+
 // NewServer creates a new API server
 func NewServer(store *storage.Store, port int, opts ...ServerOption) *Server {
 	app := fiber.New(fiber.Config{
@@ -85,6 +93,11 @@ func NewServer(store *storage.Store, port int, opts ...ServerOption) *Server {
 	// Apply options
 	for _, opt := range opts {
 		opt(s)
+	}
+
+	// Setup admin routes first (before auth middleware)
+	if s.adminServer != nil {
+		s.adminServer.SetupRoutes(app)
 	}
 
 	// Apply auth middleware if configured

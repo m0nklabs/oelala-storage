@@ -80,7 +80,12 @@ func New(config ...Config) fiber.Handler {
 			}
 		} else if strings.HasPrefix(auth, "ApiKey ") {
 			apiKey := strings.TrimPrefix(auth, "ApiKey ")
+			// Try static keys first
 			user = validateAPIKey(cfg.APIKeys, apiKey)
+			// Fall back to dynamic validator (e.g., apikeys store)
+			if user == nil && cfg.TokenValidator != nil {
+				user = cfg.TokenValidator(apiKey)
+			}
 		}
 
 		if user == nil {

@@ -79,6 +79,7 @@ type PeerInfo struct {
 type SecurityConfig struct {
 	EncryptionAtRest bool        `mapstructure:"encryption_at_rest"`
 	AuthTokens       []AuthToken `mapstructure:"auth_tokens"`
+	AdminSecret      string      `mapstructure:"admin_secret"` // Secret for /admin access
 }
 
 // AuthToken holds authentication token configuration.

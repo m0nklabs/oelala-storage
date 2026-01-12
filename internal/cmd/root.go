@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/m0nklabs/oelala-storage/internal/api"
+	"github.com/m0nklabs/oelala-storage/internal/apikeys"
 	"github.com/m0nklabs/oelala-storage/internal/auth"
 	"github.com/m0nklabs/oelala-storage/internal/config"
 	"github.com/m0nklabs/oelala-storage/internal/logging"
@@ -211,26 +213,54 @@ var serveCmd = &cobra.Command{
 			serverOpts = append(serverOpts, api.WithMetrics())
 		}
 
-		// Configure authentication if tokens are defined
-		if len(cfg.Security.AuthTokens) > 0 {
-			authCfg := auth.Config{
-				APIKeys:   make(map[string]*auth.UserContext),
-				SkipPaths: []string{"/health", "/status", "/metrics"},
-			}
-			for _, token := range cfg.Security.AuthTokens {
-				if token.Token != "" {
-					authCfg.APIKeys[token.Token] = &auth.UserContext{
-						UserID: token.Name,
-						Roles:  token.Permissions,
+		// Initialize API keys store for dynamic key management
+		keyStorePath := filepath.Join(cfg.Storage.Path, "apikeys")
+		keyStore, err := apikeys.NewStore(keyStorePath)
+		if err != nil {
+			return fmt.Errorf("failed to initialize apikeys store: %w", err)
+		}
+		defer keyStore.Close()
+		logging.Info("API keys store initialized", zap.String("path", keyStorePath))
+
+		// Setup admin server for API key management UI
+		adminServer := api.NewAdminServer(keyStore, cfg.Security.AdminSecret)
+		serverOpts = append(serverOpts, api.WithAdminServer(adminServer))
+		if cfg.Security.AdminSecret != "" {
+			logging.Info("Admin UI enabled at /admin/ (protected)")
+		} else {
+			logging.Warn("Admin UI enabled at /admin/ (NO PASSWORD SET - use security.admin_secret)")
+		}
+
+		// Configure authentication
+		authCfg := auth.Config{
+			APIKeys:   make(map[string]*auth.UserContext),
+			SkipPaths: []string{"/health", "/status", "/metrics", "/admin", "/admin/"},
+			// Dynamic key validation via apikeys store
+			TokenValidator: func(token string) *auth.UserContext {
+				// Try dynamic key store first
+				if key, err := keyStore.ValidateKey(token); err == nil {
+					return &auth.UserContext{
+						UserID: key.Name,
+						Roles:  key.Permissions,
 					}
-					logging.Info("API key configured", zap.String("name", token.Name))
 				}
-			}
-			if len(authCfg.APIKeys) > 0 {
-				serverOpts = append(serverOpts, api.WithAuth(authCfg))
-				logging.Info("Authentication enabled", zap.Int("keys", len(authCfg.APIKeys)))
+				return nil
+			},
+		}
+
+		// Add static tokens from config
+		for _, token := range cfg.Security.AuthTokens {
+			if token.Token != "" {
+				authCfg.APIKeys[token.Token] = &auth.UserContext{
+					UserID: token.Name,
+					Roles:  token.Permissions,
+				}
+				logging.Info("Static API key configured", zap.String("name", token.Name))
 			}
 		}
+
+		serverOpts = append(serverOpts, api.WithAuth(authCfg))
+		logging.Info("Authentication enabled", zap.Int("static_keys", len(authCfg.APIKeys)))
 
 		server := api.NewServer(store, cfg.API.HTTPPort, serverOpts...)
 

@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>oelala-storage Admin</title>
+    <style>
+        :root {
+            --bg: #0f0f0f;
+            --surface: #1a1a1a;
+            --border: #333;
+            --text: #e0e0e0;
+            --text-dim: #888;
+            --primary: #6366f1;
+            --primary-hover: #818cf8;
+            --danger: #ef4444;
+            --success: #22c55e;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .container { max-width: 900px; margin: 0 auto; }
+        h1 { 
+            font-size: 1.5rem; 
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        h1 span { color: var(--primary); }
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .card h2 { font-size: 1rem; margin-bottom: 1rem; color: var(--text-dim); }
+        .form-row { display: flex; gap: 1rem; margin-bottom: 1rem; }
+        input, select {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.75rem 1rem;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            flex: 1;
+        }
+        input:focus, select:focus { outline: none; border-color: var(--primary); }
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        button:hover { background: var(--primary-hover); }
+        button.danger { background: var(--danger); }
+        button.danger:hover { background: #dc2626; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { 
+            padding: 0.75rem; 
+            text-align: left; 
+            border-bottom: 1px solid var(--border);
+        }
+        th { color: var(--text-dim); font-weight: 500; font-size: 0.85rem; }
+        .status { 
+            display: inline-block; 
+            padding: 0.25rem 0.5rem; 
+            border-radius: 4px; 
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        .status.active { background: rgba(34, 197, 94, 0.2); color: var(--success); }
+        .status.revoked { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+        .key-display {
+            background: var(--bg);
+            border: 1px solid var(--success);
+            border-radius: 6px;
+            padding: 1rem;
+            margin: 1rem 0;
+            font-family: monospace;
+            word-break: break-all;
+        }
+        .key-display strong { color: var(--success); }
+        .warning { color: var(--danger); font-size: 0.85rem; margin-top: 0.5rem; }
+        .actions { display: flex; gap: 0.5rem; }
+        .actions button { padding: 0.5rem 0.75rem; font-size: 0.8rem; }
+        #newKeyResult { display: none; }
+        .empty { color: var(--text-dim); text-align: center; padding: 2rem; }
+        .loader { display: none; }
+        .loading .loader { display: inline-block; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loader::after { content: '⟳'; animation: spin 1s linear infinite; display: inline-block; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📦 <span>oelala-storage</span> Admin</h1>
+
+        <div class="card">
+            <h2>Create API Key</h2>
+            <form id="createKeyForm">
+                <div class="form-row">
+                    <input type="text" id="keyName" placeholder="Key name (e.g., 'production-backend')" required>
+                    <select id="keyPerms">
+                        <option value="read,write,delete">Full Access</option>
+                        <option value="read,write">Read + Write</option>
+                        <option value="read">Read Only</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                    <button type="submit"><span class="loader"></span> Create Key</button>
+                </div>
+            </form>
+            <div id="newKeyResult">
+                <div class="key-display">
+                    <strong>🔑 Your new API key:</strong><br><br>
+                    <code id="newKeyValue"></code>
+                </div>
+                <p class="warning">⚠️ Save this key now! It will not be shown again.</p>
+                <button onclick="copyKey()">📋 Copy to Clipboard</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>API Keys</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Key Prefix</th>
+                        <th>Permissions</th>
+                        <th>Created</th>
+                        <th>Last Used</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="keysTable">
+                    <tr><td colspan="7" class="empty">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>Usage Example</h2>
+            <pre style="background: var(--bg); padding: 1rem; border-radius: 6px; overflow-x: auto; font-size: 0.85rem;">
+# Upload a file
+curl -X PUT \
+  -H "X-API-Key: osk_your_key_here" \
+  -d "Hello World" \
+  http://localhost:7990/mybucket/hello.txt
+
+# Download a file
+curl -H "X-API-Key: osk_your_key_here" \
+  http://localhost:7990/mybucket/hello.txt</pre>
+        </div>
+    </div>
+
+    <script>
+        const secret = new URLSearchParams(location.search).get('secret') || '';
+        const headers = { 'Content-Type': 'application/json' };
+        if (secret) headers['X-Admin-Secret'] = secret;
+
+        async function loadKeys() {
+            try {
+                const res = await fetch('/admin/keys' + (secret ? '?secret=' + secret : ''), { headers });
+                if (!res.ok) throw new Error('Failed to load keys');
+                const data = await res.json();
+                renderKeys(data.keys || []);
+            } catch (e) {
+                document.getElementById('keysTable').innerHTML = 
+                    '<tr><td colspan="7" class="empty">Error loading keys: ' + e.message + '</td></tr>';
+            }
+        }
+
+        function renderKeys(keys) {
+            const tbody = document.getElementById('keysTable');
+            if (!keys.length) {
+                tbody.innerHTML = '<tr><td colspan="7" class="empty">No API keys yet. Create one above!</td></tr>';
+                return;
+            }
+            tbody.innerHTML = keys.map(k => `
+                <tr>
+                    <td>${escapeHtml(k.name)}</td>
+                    <td><code>${escapeHtml(k.key_prefix)}</code></td>
+                    <td>${k.permissions.join(', ')}</td>
+                    <td>${formatDate(k.created_at)}</td>
+                    <td>${k.last_used_at ? formatDate(k.last_used_at) : '-'}</td>
+                    <td><span class="status ${k.is_active ? 'active' : 'revoked'}">${k.is_active ? 'Active' : 'Revoked'}</span></td>
+                    <td class="actions">
+                        ${k.is_active ? `<button onclick="revokeKey('${k.id}')" class="danger">Revoke</button>` : ''}
+                        <button onclick="deleteKey('${k.id}')" class="danger">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+        }
+
+        function formatDate(str) {
+            if (!str) return '-';
+            return new Date(str).toLocaleDateString() + ' ' + new Date(str).toLocaleTimeString();
+        }
+
+        document.getElementById('createKeyForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('keyName').value;
+            const perms = document.getElementById('keyPerms').value.split(',');
+            const btn = e.target.querySelector('button');
+            btn.classList.add('loading');
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/admin/keys' + (secret ? '?secret=' + secret : ''), {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ name, permissions: perms })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+
+                document.getElementById('newKeyValue').textContent = data.api_key;
+                document.getElementById('newKeyResult').style.display = 'block';
+                document.getElementById('keyName').value = '';
+                loadKeys();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        };
+
+        async function revokeKey(id) {
+            if (!confirm('Revoke this key? It will no longer work.')) return;
+            try {
+                await fetch('/admin/keys/' + id + '/revoke' + (secret ? '?secret=' + secret : ''), {
+                    method: 'POST', headers
+                });
+                loadKeys();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function deleteKey(id) {
+            if (!confirm('Permanently delete this key?')) return;
+            try {
+                await fetch('/admin/keys/' + id + (secret ? '?secret=' + secret : ''), {
+                    method: 'DELETE', headers
+                });
+                loadKeys();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        function copyKey() {
+            const key = document.getElementById('newKeyValue').textContent;
+            navigator.clipboard.writeText(key).then(() => {
+                alert('Copied to clipboard!');
+            });
+        }
+
+        loadKeys();
+    </script>
+</body>
+</html>
