@@ -156,7 +156,7 @@ class StorageClient:
         self.base_url = base_url
         self.client = httpx.AsyncClient(timeout=300.0)  # 5 min timeout
     
-    async def __aenter__(self):
+    async def __aenter__(self) -> "StorageClient":
         """Async context manager entry."""
         return self
     
@@ -279,7 +279,6 @@ class StorageClient:
 async def generate_and_upload_video(
     user_id: str,
     jwt_token: str,
-    tier_id: str,
     prompt: str
 ) -> dict:
     """Complete workflow: generate video and upload to storage."""
@@ -341,9 +340,16 @@ async def can_generate(user_id: str, tier_id: str, estimated_size_mb: int) -> tu
     quota_mb = tier_quotas.get(tier_id, tier_quotas["free"])
     
     # Get current usage from storage service
-    async with StorageClient() as storage:
-        usage = await storage.get_usage(user_id)
-        used_mb = usage["used_bytes"] / (1024 * 1024)
+    # In a real implementation, this would call an API endpoint
+    # For this example, we'll show the pattern:
+    # async with httpx.AsyncClient() as client:
+    #     response = await client.get(f"http://localhost:7990/users/{user_id}/usage")
+    #     usage = response.json()
+    #     used_mb = usage["used_bytes"] / (1024 * 1024)
+    
+    # For now, assume we have a way to get usage (placeholder)
+    # In practice, track this in your backend database
+    used_mb = 0  # Replace with actual usage tracking
     
     available_mb = quota_mb - used_mb
     
@@ -382,7 +388,6 @@ async def generate_video_endpoint(
     result = await generate_and_upload_video(
         user.id,
         user.jwt_token,
-        user.tier_id,
         request.prompt
     )
     
