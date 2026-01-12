@@ -156,13 +156,20 @@ class StorageClient:
         self.base_url = base_url
         self.client = httpx.AsyncClient(timeout=300.0)  # 5 min timeout
     
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.client.aclose()
+    
     async def upload_generated_media(
         self,
         user_id: str,
         jwt_token: str,
         file_path: Path,
-        media_type: str,
-        tier_id: str = "free"
+        media_type: str
     ) -> Optional[dict]:
         """
         Upload generated media to storage with quota check.
@@ -172,7 +179,6 @@ class StorageClient:
             jwt_token: JWT token from Supabase session
             file_path: Local path to generated file
             media_type: Type of media (video, audio, image)
-            tier_id: User's subscription tier
             
         Returns:
             Upload response with metadata or None if quota exceeded
@@ -205,7 +211,7 @@ class StorageClient:
             response = await self.client.put(
                 f"{self.base_url}{storage_path}",
                 headers=headers,
-                content=f.read()
+                content=f
             )
         
         if response.status_code == 201:
@@ -278,14 +284,13 @@ async def generate_and_upload_video(
     video_path = await generate_video(prompt)
     
     # 2. Upload to storage
-    storage = StorageClient()
-    result = await storage.upload_generated_media(
-        user_id=user_id,
-        jwt_token=jwt_token,
-        file_path=video_path,
-        media_type="videos",
-        tier_id=tier_id
-    )
+    async with StorageClient() as storage:
+        result = await storage.upload_generated_media(
+            user_id=user_id,
+            jwt_token=jwt_token,
+            file_path=video_path,
+            media_type="videos"
+        )
     
     # 3. Clean up local file
     if result.get("success"):
@@ -332,9 +337,9 @@ async def can_generate(user_id: str, tier_id: str, estimated_size_mb: int) -> tu
     quota_mb = tier_quotas.get(tier_id, tier_quotas["free"])
     
     # Get current usage from storage service
-    storage = StorageClient()
-    usage = await storage.get_usage(user_id)
-    used_mb = usage["used_bytes"] / (1024 * 1024)
+    async with StorageClient() as storage:
+        usage = await storage.get_usage(user_id)
+        used_mb = usage["used_bytes"] / (1024 * 1024)
     
     available_mb = quota_mb - used_mb
     
@@ -479,26 +484,26 @@ async def safe_upload(
     user_id: str,
     jwt_token: str,
     file_path: Path,
-    media_type: str,
-    tier_id: str
+    media_type: str
 ) -> dict:
     """Upload with comprehensive error handling."""
-    storage = StorageClient()
     
     try:
         # Validate file
         validate_file_size(file_path)
         
-        # Check quota
-        file_size = file_path.stat().st_size
-        quota_check = await storage.check_quota(user_id, jwt_token, file_size)
-        if not quota_check["allowed"]:
-            raise QuotaExceededError(quota_check["message"])
-        
-        # Upload with retry
-        result = await upload_with_retry(
-            user_id, jwt_token, file_path, media_type
-        )
+        # Upload with StorageClient (which has retry logic via tenacity)
+        async with StorageClient() as storage:
+            # Check quota
+            file_size = file_path.stat().st_size
+            quota_check = await storage.check_quota(user_id, jwt_token, file_size)
+            if not quota_check["allowed"]:
+                raise QuotaExceededError(quota_check["message"])
+            
+            # Upload
+            result = await storage.upload_generated_media(
+                user_id, jwt_token, file_path, media_type
+            )
         
         return result
         
@@ -539,7 +544,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-async def upload_with_logging(user_id: str, file_path: Path, **kwargs):
+async def upload_with_logging(
+    user_id: str,
+    jwt_token: str,
+    file_path: Path,
+    media_type: str
+):
     """Upload with detailed logging."""
     logger.info(
         "Starting upload",
@@ -551,7 +561,10 @@ async def upload_with_logging(user_id: str, file_path: Path, **kwargs):
     )
     
     try:
-        result = await upload_generated_media(user_id, file_path, **kwargs)
+        async with StorageClient() as storage:
+            result = await storage.upload_generated_media(
+                user_id, jwt_token, file_path, media_type
+            )
         
         logger.info(
             "Upload successful",

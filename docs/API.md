@@ -159,7 +159,7 @@ async def upload_file(
             response = await client.put(
                 url,
                 headers=headers,
-                content=f.read()
+                content=f
             )
             response.raise_for_status()
             return response.json()
@@ -504,6 +504,14 @@ class OelalaStorage:
         self.base_url = base_url
         self.client = httpx.AsyncClient(timeout=300.0)
     
+    async def __aenter__(self) -> "OelalaStorage":
+        """Enter the async context manager."""
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Exit the async context manager and close the HTTP client."""
+        await self.close()
+    
     def set_token(self, jwt_token: str):
         """Set JWT token for authentication."""
         self.client.headers["Authorization"] = f"Bearer {jwt_token}"
@@ -526,7 +534,7 @@ class OelalaStorage:
             response = await self.client.put(
                 url,
                 headers=headers,
-                content=f.read()
+                content=f
             )
         
         response.raise_for_status()
@@ -599,10 +607,9 @@ class OelalaStorage:
 
 async def main():
     """Example usage of the storage client."""
-    storage = OelalaStorage()
-    storage.set_token("your-jwt-token-here")
-    
-    try:
+    async with OelalaStorage() as storage:
+        storage.set_token("your-jwt-token-here")
+        
         # Check health
         health = await storage.health()
         print(f"Service status: {health['status']}")
@@ -641,9 +648,6 @@ async def main():
         # Delete the file
         await storage.delete("users", "123e4567/media/test.txt")
         print("Deleted successfully")
-        
-    finally:
-        await storage.close()
 
 
 if __name__ == "__main__":
