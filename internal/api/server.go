@@ -17,6 +17,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/m0nklabs/oelala-storage/internal/auth"
+	"github.com/m0nklabs/oelala-storage/internal/bucket"
 	"github.com/m0nklabs/oelala-storage/internal/metrics"
 	"github.com/m0nklabs/oelala-storage/internal/storage"
 )
@@ -25,6 +26,7 @@ import (
 type Server struct {
 	app            *fiber.App
 	store          *storage.Store
+	bucketStore    *bucket.Store
 	port           int
 	authConfig     *auth.Config
 	tlsConfig      *tls.Config
@@ -52,6 +54,13 @@ func WithTLS(config *tls.Config) ServerOption {
 func WithMetrics() ServerOption {
 	return func(s *Server) {
 		s.metricsEnabled = true
+	}
+}
+
+// WithBucketStore sets the bucket store
+func WithBucketStore(bs *bucket.Store) ServerOption {
+	return func(s *Server) {
+		s.bucketStore = bs
 	}
 }
 
@@ -110,6 +119,13 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/health", s.healthCheck)
 	s.app.Get("/status", s.status)
 
+	// Bucket management routes
+	s.app.Post("/buckets", s.createBucket)
+	s.app.Get("/buckets", s.listBuckets)
+	s.app.Get("/buckets/:user_id", s.getBucket)
+	s.app.Patch("/buckets/:user_id", s.updateBucket)
+	s.app.Delete("/buckets/:user_id", s.deleteBucket)
+
 	// Management routes (before bucket wildcards)
 	s.app.Get("/peers", s.listPeers)
 	s.app.Post("/peers", s.addPeer)
@@ -161,7 +177,7 @@ func (s *Server) status(c *fiber.Ctx) error {
 
 // PUT /:bucket/:key - Upload object
 func (s *Server) putObject(c *fiber.Ctx) error {
-	bucket := c.Params("bucket")
+	bucketName := c.Params("bucket")
 	key := c.Params("key")
 
 	body := c.Body()
@@ -171,15 +187,44 @@ func (s *Server) putObject(c *fiber.Ctx) error {
 		})
 	}
 
+	// Check quota if bucket management is enabled
+	// Extract user ID from bucket name (format: users/{user_id}/...)
+	var userID string
+	if len(bucketName) > 6 && bucketName[:6] == "users/" {
+		// Extract user ID from path
+		parts := bytes.Split([]byte(bucketName), []byte("/"))
+		if len(parts) >= 2 {
+			userID = string(parts[1])
+		}
+	}
+
+	// Check quota before upload
+	if s.bucketStore != nil && userID != "" {
+		hasQuota, info, _ := s.bucketStore.CheckQuota(userID, int64(len(body)))
+		if !hasQuota {
+			return c.Status(http.StatusPaymentRequired).JSON(fiber.Map{
+				"error":       "storage_quota_exceeded",
+				"used":        info.UsedBytes,
+				"limit":       info.QuotaBytes,
+				"upgrade_url": "https://oelala.ai/upgrade",
+			})
+		}
+	}
+
 	// Use bytes.Reader for in-memory body (works in tests and small uploads)
 	// For large uploads, streaming would be handled differently
 	reader := bytes.NewReader(body)
 
-	obj, err := s.store.Put(bucket, key, reader)
+	obj, err := s.store.Put(bucketName, key, reader)
 	if err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
+	}
+
+	// Update usage after successful upload
+	if s.bucketStore != nil && userID != "" {
+		_ = s.bucketStore.AddUsage(userID, obj.Size, 1)
 	}
 
 	return c.Status(http.StatusCreated).JSON(obj)
@@ -210,13 +255,39 @@ func (s *Server) getObject(c *fiber.Ctx) error {
 
 // DELETE /:bucket/:key - Delete object
 func (s *Server) deleteObject(c *fiber.Ctx) error {
-	bucket := c.Params("bucket")
+	bucketName := c.Params("bucket")
 	key := c.Params("key")
 
-	if err := s.store.Delete(bucket, key); err != nil {
+	// Get file size before deleting for quota update
+	var fileSize int64
+	var userID string
+
+	// Extract user ID from bucket name
+	if len(bucketName) > 6 && bucketName[:6] == "users/" {
+		parts := bytes.Split([]byte(bucketName), []byte("/"))
+		if len(parts) >= 2 {
+			userID = string(parts[1])
+		}
+	}
+
+	// Get size before delete
+	if s.bucketStore != nil && userID != "" {
+		reader, obj, err := s.store.Get(bucketName, key)
+		if err == nil {
+			fileSize = obj.Size
+			_ = reader.Close()
+		}
+	}
+
+	if err := s.store.Delete(bucketName, key); err != nil {
 		return c.Status(http.StatusNotFound).JSON(fiber.Map{
 			"error": err.Error(),
 		})
+	}
+
+	// Update usage after successful delete
+	if s.bucketStore != nil && userID != "" && fileSize > 0 {
+		_ = s.bucketStore.AddUsage(userID, -fileSize, -1)
 	}
 
 	return c.SendStatus(http.StatusNoContent)
@@ -278,4 +349,132 @@ func (s *Server) removePeer(c *fiber.Ctx) error {
 	return c.Status(http.StatusNotImplemented).JSON(fiber.Map{
 		"error": "not implemented",
 	})
+}
+
+// Bucket management handlers
+
+// POST /buckets - Create user bucket
+func (s *Server) createBucket(c *fiber.Ctx) error {
+	if s.bucketStore == nil {
+		return c.Status(http.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "bucket management not enabled",
+		})
+	}
+
+	var req bucket.CreateRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid request body",
+		})
+	}
+
+	if req.UserID == "" {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+			"error": "user_id is required",
+		})
+	}
+
+	info, err := s.bucketStore.Create(&req)
+	if err != nil {
+		return c.Status(http.StatusConflict).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.Status(http.StatusCreated).JSON(info)
+}
+
+// GET /buckets - List all buckets (admin)
+func (s *Server) listBuckets(c *fiber.Ctx) error {
+	if s.bucketStore == nil {
+		return c.Status(http.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "bucket management not enabled",
+		})
+	}
+
+	limit, _ := strconv.Atoi(c.Query("limit", "50"))
+	offset, _ := strconv.Atoi(c.Query("offset", "0"))
+
+	buckets, err := s.bucketStore.List(limit, offset)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"buckets": buckets,
+		"count":   len(buckets),
+		"limit":   limit,
+		"offset":  offset,
+	})
+}
+
+// GET /buckets/:user_id - Get bucket info
+func (s *Server) getBucket(c *fiber.Ctx) error {
+	if s.bucketStore == nil {
+		return c.Status(http.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "bucket management not enabled",
+		})
+	}
+
+	userID := c.Params("user_id")
+	info, err := s.bucketStore.Get(userID)
+	if err != nil {
+		return c.Status(http.StatusNotFound).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	// Add quota headers
+	c.Set("X-Quota-Used", strconv.FormatInt(info.UsedBytes, 10))
+	c.Set("X-Quota-Limit", strconv.FormatInt(info.QuotaBytes, 10))
+
+	return c.JSON(info)
+}
+
+// PATCH /buckets/:user_id - Update bucket tier/quota
+func (s *Server) updateBucket(c *fiber.Ctx) error {
+	if s.bucketStore == nil {
+		return c.Status(http.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "bucket management not enabled",
+		})
+	}
+
+	userID := c.Params("user_id")
+
+	var req bucket.UpdateRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid request body",
+		})
+	}
+
+	info, err := s.bucketStore.Update(userID, &req)
+	if err != nil {
+		return c.Status(http.StatusNotFound).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.JSON(info)
+}
+
+// DELETE /buckets/:user_id - Delete bucket (admin)
+func (s *Server) deleteBucket(c *fiber.Ctx) error {
+	if s.bucketStore == nil {
+		return c.Status(http.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "bucket management not enabled",
+		})
+	}
+
+	userID := c.Params("user_id")
+
+	if err := s.bucketStore.Delete(userID); err != nil {
+		return c.Status(http.StatusNotFound).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.SendStatus(http.StatusNoContent)
 }
