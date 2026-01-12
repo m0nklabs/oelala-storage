@@ -132,10 +132,11 @@ func (s *Server) setupRoutes() {
 	s.app.Delete("/peers/:id", s.removePeer)
 
 	// S3-compatible routes (with wildcard for nested keys)
-	s.app.Put("/:bucket/:key<*>", s.putObject)
-	s.app.Get("/:bucket/:key<*>", s.getObject)
-	s.app.Delete("/:bucket/:key<*>", s.deleteObject)
-	s.app.Head("/:bucket/:key<*>", s.headObject)
+	// Fiber uses :key* for wildcard params that catch everything including slashes
+	s.app.Put("/:bucket/*", s.putObject)
+	s.app.Get("/:bucket/*", s.getObject)
+	s.app.Delete("/:bucket/*", s.deleteObject)
+	s.app.Head("/:bucket/*", s.headObject)
 	s.app.Get("/:bucket", s.listObjects)
 }
 
@@ -175,10 +176,10 @@ func (s *Server) status(c *fiber.Ctx) error {
 	})
 }
 
-// PUT /:bucket/:key - Upload object
+// PUT /:bucket/* - Upload object
 func (s *Server) putObject(c *fiber.Ctx) error {
 	bucketName := c.Params("bucket")
-	key := c.Params("key")
+	key := c.Params("*")
 
 	body := c.Body()
 	if len(body) == 0 {
@@ -230,10 +231,15 @@ func (s *Server) putObject(c *fiber.Ctx) error {
 	return c.Status(http.StatusCreated).JSON(obj)
 }
 
-// GET /:bucket/:key - Download object
+// GET /:bucket/* - Download object
 func (s *Server) getObject(c *fiber.Ctx) error {
 	bucket := c.Params("bucket")
-	key := c.Params("key")
+	key := c.Params("*")
+
+	// If no key specified, list objects instead
+	if key == "" {
+		return s.listObjects(c)
+	}
 
 	reader, obj, err := s.store.Get(bucket, key)
 	if err != nil {
@@ -253,10 +259,10 @@ func (s *Server) getObject(c *fiber.Ctx) error {
 	return err
 }
 
-// DELETE /:bucket/:key - Delete object
+// DELETE /:bucket/* - Delete object
 func (s *Server) deleteObject(c *fiber.Ctx) error {
 	bucketName := c.Params("bucket")
-	key := c.Params("key")
+	key := c.Params("*")
 
 	// Get file size before deleting for quota update
 	var fileSize int64
@@ -293,10 +299,10 @@ func (s *Server) deleteObject(c *fiber.Ctx) error {
 	return c.SendStatus(http.StatusNoContent)
 }
 
-// HEAD /:bucket/:key - Object metadata
+// HEAD /:bucket/* - Object metadata
 func (s *Server) headObject(c *fiber.Ctx) error {
 	bucket := c.Params("bucket")
-	key := c.Params("key")
+	key := c.Params("*")
 
 	if !s.store.Exists(bucket, key) {
 		return c.SendStatus(http.StatusNotFound)

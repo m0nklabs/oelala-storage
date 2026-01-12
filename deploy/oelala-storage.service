@@ -1,21 +1,33 @@
 [Unit]
-Description=Oelala Storage Service
+Description=Oelala Storage - Distributed Object Storage Service
 Documentation=https://github.com/m0nklabs/oelala-storage
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=flip
 Group=flip
 WorkingDirectory=/home/flip/oelala-storage
-ExecStart=/home/flip/oelala-storage/bin/oelala-storage serve
-Restart=on-failure
+ExecStart=/home/flip/oelala-storage/bin/oelala-storage serve --config /home/flip/oelala-storage/oelala-storage.yaml
+Restart=always
 RestartSec=5
-StandardOutput=journal
-StandardError=journal
 
 # Environment
 Environment=HOME=/home/flip
+
+# Security hardening (minimal for now - expand later)
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=oelala-storage
+
+# Resource limits
+LimitNOFILE=65535
+LimitNPROC=4096
 
 [Install]
 WantedBy=multi-user.target

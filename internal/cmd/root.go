@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/m0nklabs/oelala-storage/internal/api"
+	"github.com/m0nklabs/oelala-storage/internal/auth"
 	"github.com/m0nklabs/oelala-storage/internal/config"
 	"github.com/m0nklabs/oelala-storage/internal/logging"
 	"github.com/m0nklabs/oelala-storage/internal/metrics"
@@ -208,6 +209,27 @@ var serveCmd = &cobra.Command{
 		}
 		if cfg.Metrics.Enabled {
 			serverOpts = append(serverOpts, api.WithMetrics())
+		}
+
+		// Configure authentication if tokens are defined
+		if len(cfg.Security.AuthTokens) > 0 {
+			authCfg := auth.Config{
+				APIKeys:   make(map[string]*auth.UserContext),
+				SkipPaths: []string{"/health", "/status", "/metrics"},
+			}
+			for _, token := range cfg.Security.AuthTokens {
+				if token.Token != "" {
+					authCfg.APIKeys[token.Token] = &auth.UserContext{
+						UserID: token.Name,
+						Roles:  token.Permissions,
+					}
+					logging.Info("API key configured", zap.String("name", token.Name))
+				}
+			}
+			if len(authCfg.APIKeys) > 0 {
+				serverOpts = append(serverOpts, api.WithAuth(authCfg))
+				logging.Info("Authentication enabled", zap.Int("keys", len(authCfg.APIKeys)))
+			}
 		}
 
 		server := api.NewServer(store, cfg.API.HTTPPort, serverOpts...)
