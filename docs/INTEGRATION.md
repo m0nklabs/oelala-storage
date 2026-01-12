@@ -162,6 +162,10 @@ class StorageClient:
     
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         """Async context manager exit."""
+        await self.close()
+    
+    async def close(self):
+        """Close the HTTP client."""
         await self.client.aclose()
     
     async def upload_generated_media(
