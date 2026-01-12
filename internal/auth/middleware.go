@@ -75,7 +75,10 @@ func New(config ...Config) fiber.Handler {
 
 		if strings.HasPrefix(auth, "Bearer ") {
 			token := strings.TrimPrefix(auth, "Bearer ")
-			if cfg.TokenValidator != nil {
+			// Try static keys first (Bearer can also be API key)
+			user = validateAPIKey(cfg.APIKeys, token)
+			// Fall back to dynamic validator
+			if user == nil && cfg.TokenValidator != nil {
 				user = cfg.TokenValidator(token)
 			}
 		} else if strings.HasPrefix(auth, "ApiKey ") {
