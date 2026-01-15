@@ -272,10 +272,23 @@ func (s *Server) healthCheck(c *fiber.Ctx) error {
 
 // Status endpoint
 func (s *Server) status(c *fiber.Ctx) error {
-	return c.JSON(fiber.Map{
+	response := fiber.Map{
 		"status": "running",
-		// TODO: Add disk usage, peer count, etc.
-	})
+	}
+
+	// Add dedup stats if available
+	if s.dedupStore != nil {
+		if stats, err := s.dedupStore.GetStats(); err == nil {
+			response["dedup"] = stats
+		}
+	}
+
+	// Add GC stats if available
+	if s.gcGetStats != nil {
+		response["gc"] = s.gcGetStats()
+	}
+
+	return c.JSON(response)
 }
 
 // PUT /:bucket/* - Upload object
@@ -341,7 +354,8 @@ func (s *Server) putObject(c *fiber.Ctx) error {
 				"error": err.Error(),
 			})
 		}
-		contentType = "application/octet-stream" // TODO: detect content type
+		// Detect content type from file extension and body
+		contentType, _, _ = storage.DetectFromReader(bytes.NewReader(body), key)
 		createdAt = time.Now()
 	} else {
 		// Use regular file storage (backward compatible)
