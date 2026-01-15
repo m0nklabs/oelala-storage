@@ -18,6 +18,8 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/m0nklabs/oelala-storage/internal/auth"
 	"github.com/m0nklabs/oelala-storage/internal/bucket"
+	"github.com/m0nklabs/oelala-storage/internal/dedup"
+	"github.com/m0nklabs/oelala-storage/internal/metadata"
 	"github.com/m0nklabs/oelala-storage/internal/metrics"
 	"github.com/m0nklabs/oelala-storage/internal/signedurl"
 	"github.com/m0nklabs/oelala-storage/internal/storage"
@@ -27,6 +29,8 @@ import (
 type Server struct {
 	app            *fiber.App
 	store          *storage.Store
+	metadataStore  *metadata.Store
+	dedupStore     *dedup.Store
 	bucketStore    *bucket.Store
 	port           int
 	authConfig     *auth.Config
@@ -35,6 +39,8 @@ type Server struct {
 	adminServer    *AdminServer
 	signer         *signedurl.Signer
 	baseURL        string
+	gcRunOnce      func() interface{} // For triggering GC via API
+	gcGetStats     func() interface{} // For getting GC stats
 }
 
 // ServerOption configures the server
@@ -82,6 +88,20 @@ func WithSigningSecret(secret string, baseURL string) ServerOption {
 			s.signer = signedurl.NewSigner(secret)
 			s.baseURL = baseURL
 		}
+	}
+}
+
+// WithMetadataStore sets the metadata store for expiration tracking
+func WithMetadataStore(ms *metadata.Store) ServerOption {
+	return func(s *Server) {
+		s.metadataStore = ms
+	}
+}
+
+// WithDedupStore sets the deduplication store
+func WithDedupStore(ds *dedup.Store) ServerOption {
+	return func(s *Server) {
+		s.dedupStore = ds
 	}
 }
 
@@ -145,6 +165,13 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/health", s.healthCheck)
 	s.app.Get("/status", s.status)
 
+	// GC management routes (requires auth)
+	s.app.Get("/gc/stats", s.gcStats)
+	s.app.Post("/gc/run", s.gcRun)
+
+	// Deduplication stats route
+	s.app.Get("/dedup/stats", s.dedupStats)
+
 	// Bucket management routes
 	s.app.Post("/buckets", s.createBucket)
 	s.app.Get("/buckets", s.listBuckets)
@@ -172,6 +199,43 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/:bucket", s.listObjects)
 }
 
+// gcStats returns garbage collection statistics
+func (s *Server) gcStats(c *fiber.Ctx) error {
+	if s.gcGetStats == nil {
+		return c.Status(http.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "garbage collector not configured",
+		})
+	}
+	return c.JSON(s.gcGetStats())
+}
+
+// gcRun triggers a garbage collection run
+func (s *Server) gcRun(c *fiber.Ctx) error {
+	if s.gcRunOnce == nil {
+		return c.Status(http.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "garbage collector not configured",
+		})
+	}
+	stats := s.gcRunOnce()
+	return c.JSON(stats)
+}
+
+// dedupStats returns deduplication statistics
+func (s *Server) dedupStats(c *fiber.Ctx) error {
+	if s.dedupStore == nil {
+		return c.Status(http.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "deduplication not configured",
+		})
+	}
+	stats, err := s.dedupStore.GetStats()
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+	return c.JSON(stats)
+}
+
 // Start begins listening for requests
 func (s *Server) Start() error {
 	addr := fmt.Sprintf(":%d", s.port)
@@ -190,6 +254,12 @@ func (s *Server) Start() error {
 // Stop gracefully shuts down the server
 func (s *Server) Stop() error {
 	return s.app.Shutdown()
+}
+
+// SetGCFunctions sets the garbage collector functions for API access
+func (s *Server) SetGCFunctions(runOnce func() interface{}, getStats func() interface{}) {
+	s.gcRunOnce = runOnce
+	s.gcGetStats = getStats
 }
 
 // Health check endpoint
@@ -220,11 +290,20 @@ func (s *Server) putObject(c *fiber.Ctx) error {
 		})
 	}
 
-	// Check quota if bucket management is enabled
-	// Extract user ID from bucket name (format: users/{user_id}/...)
-	var userID string
-	if len(bucketName) > 6 && bucketName[:6] == "users/" {
-		// Extract user ID from path
+	// Parse X-Expires-At header (ISO 8601 format)
+	// This is set by the backend to determine when files should be garbage collected
+	var expiresAt *time.Time
+	if expiresAtStr := c.Get("X-Expires-At"); expiresAtStr != "" {
+		parsed, err := time.Parse(time.RFC3339, expiresAtStr)
+		if err == nil {
+			expiresAt = &parsed
+		}
+	}
+
+	// Get user ID from header or extract from bucket path
+	userID := c.Get("X-User-ID")
+	if userID == "" && len(bucketName) > 6 && bucketName[:6] == "users/" {
+		// Extract user ID from path (format: users/{user_id}/...)
 		parts := bytes.Split([]byte(bucketName), []byte("/"))
 		if len(parts) >= 2 {
 			userID = string(parts[1])
@@ -244,23 +323,82 @@ func (s *Server) putObject(c *fiber.Ctx) error {
 		}
 	}
 
-	// Use bytes.Reader for in-memory body (works in tests and small uploads)
-	// For large uploads, streaming would be handled differently
-	reader := bytes.NewReader(body)
+	// Check if client requests deduplication (or if bucket starts with "dedup/")
+	useDedup := c.Get("X-Dedup") == "true" || bucketName == "dedup" || (len(bucketName) > 6 && bucketName[:6] == "dedup/")
 
-	obj, err := s.store.Put(bucketName, key, reader)
-	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+	var hash string
+	var size int64
+	var contentType string
+	var createdAt time.Time
+
+	if useDedup && s.dedupStore != nil {
+		// Use content-addressed storage with deduplication
+		reader := bytes.NewReader(body)
+		var err error
+		hash, size, err = s.dedupStore.Store(bucketName, key, reader)
+		if err != nil {
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+		contentType = "application/octet-stream" // TODO: detect content type
+		createdAt = time.Now()
+	} else {
+		// Use regular file storage (backward compatible)
+		reader := bytes.NewReader(body)
+		obj, err := s.store.Put(bucketName, key, reader)
+		if err != nil {
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+		hash = obj.Hash
+		size = obj.Size
+		contentType = obj.ContentType
+		createdAt = obj.CreatedAt
+	}
+
+	// Store metadata if metadata store is available
+	if s.metadataStore != nil {
+		meta := &metadata.ObjectMeta{
+			Key:         key,
+			Bucket:      bucketName,
+			Size:        size,
+			ContentType: contentType,
+			Hash:        hash,
+			UserID:      userID,
+			CreatedAt:   createdAt,
+			ModifiedAt:  createdAt,
+			ExpiresAt:   expiresAt,
+		}
+		if err := s.metadataStore.Put(meta); err != nil {
+			// Log but don't fail - file is already stored
+			// In production, we might want to be stricter here
+		}
 	}
 
 	// Update usage after successful upload
 	if s.bucketStore != nil && userID != "" {
-		_ = s.bucketStore.AddUsage(userID, obj.Size, 1)
+		_ = s.bucketStore.AddUsage(userID, size, 1)
 	}
 
-	return c.Status(http.StatusCreated).JSON(obj)
+	// Include expiration in response if set
+	response := fiber.Map{
+		"key":          key,
+		"bucket":       bucketName,
+		"size":         size,
+		"content_type": contentType,
+		"hash":         hash,
+		"created_at":   createdAt,
+	}
+	if expiresAt != nil {
+		response["expires_at"] = expiresAt
+	}
+	if useDedup {
+		response["deduplicated"] = true
+	}
+
+	return c.Status(http.StatusCreated).JSON(response)
 }
 
 // GET /:bucket/* - Download object
@@ -273,6 +411,31 @@ func (s *Server) getObject(c *fiber.Ctx) error {
 		return s.listObjects(c)
 	}
 
+	// Check if this was stored with deduplication
+	useDedup := bucket == "dedup" || (len(bucket) > 6 && bucket[:6] == "dedup/")
+
+	if useDedup && s.dedupStore != nil {
+		reader, hash, err := s.dedupStore.Get(bucket, key)
+		if err != nil {
+			return c.Status(http.StatusNotFound).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+		defer func() { _ = reader.Close() }()
+
+		// Get size from blob info
+		blobInfo, _ := s.dedupStore.GetBlobInfo(hash)
+		if blobInfo != nil {
+			c.Set("Content-Length", fmt.Sprintf("%d", blobInfo.Size))
+		}
+		c.Set("X-Blob-Hash", hash)
+
+		// Stream the file
+		_, err = io.Copy(c.Response().BodyWriter(), reader)
+		return err
+	}
+
+	// Regular storage
 	reader, obj, err := s.store.Get(bucket, key)
 	if err != nil {
 		return c.Status(http.StatusNotFound).JSON(fiber.Map{
@@ -300,27 +463,53 @@ func (s *Server) deleteObject(c *fiber.Ctx) error {
 	var fileSize int64
 	var userID string
 
-	// Extract user ID from bucket name
-	if len(bucketName) > 6 && bucketName[:6] == "users/" {
+	// Extract user ID from bucket name or header
+	userID = c.Get("X-User-ID")
+	if userID == "" && len(bucketName) > 6 && bucketName[:6] == "users/" {
 		parts := bytes.Split([]byte(bucketName), []byte("/"))
 		if len(parts) >= 2 {
 			userID = string(parts[1])
 		}
 	}
 
-	// Get size before delete
-	if s.bucketStore != nil && userID != "" {
-		reader, obj, err := s.store.Get(bucketName, key)
-		if err == nil {
-			fileSize = obj.Size
-			_ = reader.Close()
+	// Get size before delete (from metadata store if available, otherwise file)
+	if s.metadataStore != nil {
+		if meta, err := s.metadataStore.Get(bucketName, key); err == nil {
+			fileSize = meta.Size
 		}
 	}
 
-	if err := s.store.Delete(bucketName, key); err != nil {
-		return c.Status(http.StatusNotFound).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+	// Check if this was stored with deduplication
+	useDedup := bucketName == "dedup" || (len(bucketName) > 6 && bucketName[:6] == "dedup/")
+
+	if useDedup && s.dedupStore != nil {
+		// Delete from dedup store (handles ref counting)
+		if err := s.dedupStore.Delete(bucketName, key); err != nil {
+			return c.Status(http.StatusNotFound).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+	} else {
+		// Get size from file if not in metadata
+		if fileSize == 0 && s.bucketStore != nil && userID != "" {
+			reader, obj, err := s.store.Get(bucketName, key)
+			if err == nil {
+				fileSize = obj.Size
+				_ = reader.Close()
+			}
+		}
+
+		// Delete from file storage
+		if err := s.store.Delete(bucketName, key); err != nil {
+			return c.Status(http.StatusNotFound).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+	}
+
+	// Delete from metadata store
+	if s.metadataStore != nil {
+		_ = s.metadataStore.Delete(bucketName, key)
 	}
 
 	// Update usage after successful delete

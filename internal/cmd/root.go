@@ -16,7 +16,10 @@ import (
 	"github.com/m0nklabs/oelala-storage/internal/apikeys"
 	"github.com/m0nklabs/oelala-storage/internal/auth"
 	"github.com/m0nklabs/oelala-storage/internal/config"
+	"github.com/m0nklabs/oelala-storage/internal/dedup"
+	"github.com/m0nklabs/oelala-storage/internal/gc"
 	"github.com/m0nklabs/oelala-storage/internal/logging"
+	"github.com/m0nklabs/oelala-storage/internal/metadata"
 	"github.com/m0nklabs/oelala-storage/internal/metrics"
 	"github.com/m0nklabs/oelala-storage/internal/storage"
 	"github.com/m0nklabs/oelala-storage/internal/sync"
@@ -156,6 +159,29 @@ var serveCmd = &cobra.Command{
 			return fmt.Errorf("failed to initialize storage: %w", err)
 		}
 
+		// Initialize metadata store for object metadata and expiration tracking
+		metadataPath := filepath.Join(cfg.Storage.Path, "metadata")
+		metadataStore, err := metadata.NewStore(metadata.DefaultOptions(metadataPath))
+		if err != nil {
+			return fmt.Errorf("failed to initialize metadata store: %w", err)
+		}
+		defer metadataStore.Close()
+		logging.Info("Metadata store initialized", zap.String("path", metadataPath))
+
+		// Initialize deduplication store
+		dedupBlobPath := filepath.Join(cfg.Storage.Path, "blobs")
+		dedupDBPath := filepath.Join(cfg.Storage.Path, "dedup")
+		dedupStore, err := dedup.NewStore(dedup.Options{
+			BlobPath:   dedupBlobPath,
+			DBPath:     dedupDBPath,
+			SyncWrites: false,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to initialize dedup store: %w", err)
+		}
+		defer dedupStore.Close()
+		logging.Info("Dedup store initialized", zap.String("blob_path", dedupBlobPath))
+
 		// Setup TLS if enabled
 		var tlsConfig *tls.Config
 		if cfg.TLS.Enabled || cfg.API.EnableTLS {
@@ -212,6 +238,12 @@ var serveCmd = &cobra.Command{
 		if cfg.Metrics.Enabled {
 			serverOpts = append(serverOpts, api.WithMetrics())
 		}
+
+		// Add metadata store for expiration tracking
+		serverOpts = append(serverOpts, api.WithMetadataStore(metadataStore))
+
+		// Add dedup store for deduplication stats
+		serverOpts = append(serverOpts, api.WithDedupStore(dedupStore))
 
 		// Initialize API keys store for dynamic key management
 		keyStorePath := filepath.Join(cfg.Storage.Path, "apikeys")
@@ -278,6 +310,18 @@ var serveCmd = &cobra.Command{
 
 		server := api.NewServer(store, cfg.API.HTTPPort, serverOpts...)
 
+		// Start garbage collector in background
+		gcConfig := gc.DefaultConfig()
+		collector := gc.NewCollector(store, metadataStore, gcConfig)
+		gcCtx, gcCancel := context.WithCancel(context.Background())
+		go collector.Start(gcCtx)
+
+		// Add GC collector to server for API access
+		server.SetGCFunctions(
+			func() interface{} { return collector.RunOnce() },
+			func() interface{} { return collector.GetStats() },
+		)
+
 		// Handle graceful shutdown
 		quit := make(chan os.Signal, 1)
 		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -285,6 +329,7 @@ var serveCmd = &cobra.Command{
 		go func() {
 			<-quit
 			logging.Info("Shutting down...")
+			gcCancel() // Stop GC
 			if cancelReplicator != nil {
 				cancelReplicator()
 			}
