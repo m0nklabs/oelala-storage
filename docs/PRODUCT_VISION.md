@@ -1,6 +1,8 @@
 # oelala-storage: Product Vision
 
-> **Last Updated**: 2026-01-12
+> **Last Updated**: 2026-01-15
+> 
+> **See also**: [VISION.md](VISION.md) - Technical architecture details
 
 ---
 
@@ -8,7 +10,11 @@
 
 **Make distributed storage accessible to everyone.**
 
-oelala-storage is a standalone, open-source distributed storage system that anyone can deploy on their own hardware. No cloud vendor lock-in, no per-GB fees, full control.
+oelala-storage is a **client/server distributed storage system** where:
+- **Clients (Nodes)** = Any computer with spare disk space
+- **Server (Coordinator)** = Organizes nodes, acts as CDN entry point
+
+No cloud vendor lock-in, no per-GB fees, full control over your data.
 
 ---
 
@@ -29,81 +35,168 @@ For AI/ML workloads generating terabytes of media, existing solutions are either
 
 ## 💡 The Solution
 
-oelala-storage provides:
+### Architecture: Client/Server/CDN
 
-### 1. Simple Deployment
-```bash
-# That's it. Storage running.
-./oelala-storage serve --data-dir /mnt/storage
+```
+Your Backend App  →  Coordinator (CDN)  →  Storage Nodes
+                           │
+                   ┌───────┼───────┐
+                   ▼       ▼       ▼
+                 Node1   Node2   Node3
+                 500GB   200GB   1TB
 ```
 
-### 2. Web UI Administration
-- Node management (add/remove storage nodes)
-- API key generation
-- Storage metrics & health monitoring
-- User/bucket overview
+### 1. Storage Nodes (Clients)
+Run on any Windows or Linux machine with spare disk space:
 
-### 3. Multi-Node Replication
-- Add nodes by IP + storage path
-- Automatic 2x/3x replication
-- Self-healing when nodes go offline
+```bash
+# Install and configure via Web UI
+./oelala-storage serve --mode=node
+# Then open http://localhost:7990/admin to configure
+```
 
-### 4. API-First Design
-- REST API for files
-- gRPC for node-to-node communication
-- Simple integration with any application
+Web UI lets you:
+- Add storage paths (e.g., `/mnt/data`, `D:\storage`)
+- Set reserved space per path
+- Connect to coordinator with API key
+
+### 2. Coordinator (Server)
+Manages all nodes and serves as CDN entry point:
+
+```bash
+./oelala-storage serve --mode=coordinator
+```
+
+The coordinator:
+- Tracks which nodes store which files
+- Routes requests to the right node
+- Manages replication for redundancy
+- Provides unified API for your application
+
+### 3. API-First Design
+- S3-compatible REST API for files
+- gRPC for node-to-coordinator communication
+- Signed URLs for secure direct access
+- Easy integration with any application
+
+### 4. Smart Features
+- **Deduplication**: Same content stored once, referenced many times
+- **Retention**: Automatic cleanup of expired files
+- **Health monitoring**: Automatic failover when nodes go offline
 
 ---
 
 ## 👥 Target Users
 
-### Primary: AI/ML Teams
+### Primary: AI/ML Teams (like oelala)
 - Generate large amounts of media (videos, images)
 - Need affordable, scalable storage
 - Want self-hosted solution
+- Integrate via simple API
 
-### Secondary: Hobbyists & Small Teams
-- Run storage on home hardware
-- No cloud bills
-- Full data ownership
+### Secondary: Hobbyists & Self-Hosters
+- Run storage nodes on home hardware
+- Contribute spare disk space
+- No cloud bills, full data ownership
 
 ### Tertiary: Enterprises
 - On-premise requirements
 - Data sovereignty needs
-- Custom deployment
+- Custom deployment, multi-region
 
 ---
 
 ## 🗺️ Roadmap
 
-### Phase 1: Single Node (Current)
+### Phase 1: Standalone Mode ✅
 - [x] REST API (PUT/GET/DELETE)
-- [x] gRPC API
+- [x] gRPC API skeleton
 - [x] BadgerDB metadata
 - [x] Filesystem storage
 - [x] Bucket management
 - [x] Quota tracking
-- [ ] **API Key management**
-- [ ] **Web UI (Admin)**
+- [x] Signed URLs
+- [x] Web UI (Admin)
 
-### Phase 2: Multi-Node
-- [ ] Node registration
-- [ ] Node discovery (gRPC heartbeat)
-- [ ] Replication engine
-- [ ] Placement policies
-- [ ] Health monitoring
+### Phase 2: Content-Addressed Storage
+- [ ] Blob-based storage (store by hash)
+- [ ] File references in database
+- [ ] Deduplication via refcount
+- [ ] `X-Expires-At` header support
+- [ ] Garbage collection job
 
-### Phase 3: Distribution
+### Phase 3: Node Mode (Client)
+- [ ] `--mode=node` flag
+- [ ] Node Web UI for config
+- [ ] gRPC registration with coordinator
+- [ ] Heartbeat reporting (capacity, health)
+- [ ] Windows service installer
+
+### Phase 4: Coordinator Mode (Server)
+- [ ] `--mode=coordinator` flag
+- [ ] Node registry database
+- [ ] File placement engine
+- [ ] CDN routing logic
+- [ ] Replication management
+
+### Phase 5: Distribution & CDN
 - [ ] Cloudflare integration (DNS/Tunnel)
 - [ ] Global CDN caching
 - [ ] Cross-region replication
 - [ ] Geo-aware routing
 
-### Phase 4: Enterprise
+### Phase 6: Enterprise
 - [ ] SSO/SAML authentication
 - [ ] Audit logging
 - [ ] Compliance features (GDPR, SOC2)
 - [ ] SLA guarantees
+
+---
+
+## 🎯 Separation of Concerns
+
+> **CRITICAL**: oelala-storage is "dumb" storage. Your backend is the "brain".
+
+| Responsibility | Your Backend | oelala-storage |
+|---------------|--------------|----------------|
+| User authentication | ✅ | ❌ |
+| Access control (who sees what) | ✅ | ❌ |
+| Retention policies | ✅ | ❌ (just executes) |
+| Business logic | ✅ | ❌ |
+| Storing files | ❌ | ✅ |
+| Serving files | ❌ | ✅ |
+| Deduplication | ❌ | ✅ |
+| Replication | ❌ | ✅ |
+
+### How It Works
+
+```
+Your Backend                          oelala-storage
+     │                                      │
+     │ POST /files                          │
+     │ X-User-ID: user-123                  │
+     │ X-Expires-At: 2026-07-15             │
+     │ ─────────────────────────────────────→
+     │                                      │ Stores file
+     │                                      │ Tracks expiration
+     │                                      │ Deduplicates
+     │ ←─────────────────────────────────────
+     │ 201 Created                          │
+     │                                      │
+     │ User requests file                   │
+     │                                      │
+     │ GET /files/videos/output.mp4         │
+     │ X-User-ID: user-456                  │
+     │ ─────────────────────────────────────→
+     │                                      │
+     │ (Storage calls back to backend)      │
+     │ ←─────────────────────────────────────
+     │ "Can user-456 access this?"          │
+     │ ─────────────────────────────────────→
+     │ "Yes" / "No"                         │
+     │ ←─────────────────────────────────────
+     │                                      │ Serves file (or 403)
+```
 
 ---
 
@@ -118,16 +211,9 @@ oelala-storage provides:
 
 | Tier | Price | Features |
 |------|-------|----------|
-| **Community** | Free | Single/multi-node, basic UI |
+| **Community** | Free | All modes, basic UI |
 | **Pro** | $29/mo | Priority support, advanced metrics |
 | **Enterprise** | Custom | SSO, audit logs, SLA, dedicated support |
-
-### Revenue Streams
-
-1. **Support contracts** - Enterprise support
-2. **Managed hosting** - We run it for you
-3. **Consulting** - Custom deployments
-4. **Ads** - Free tier with optional ads (future)
 
 ---
 
@@ -140,7 +226,8 @@ oelala-storage provides:
 | Web UI included | ✅ | ✅ | ✅ |
 | Multi-node free | ✅ | ⚠️ | ❌ |
 | Per-GB cost | $0 | $0 | $$$ |
-| AI-optimized | ✅ | ❌ | ❌ |
+| Client/Server model | ✅ | ❌ | ❌ |
+| Windows nodes | ✅ | ⚠️ | ❌ |
 
 ---
 
@@ -154,28 +241,30 @@ oelala-storage was built for oelala.ai but is designed as a **standalone product
 │                    (AI Video Generation)                        │
 ├─────────────────────────────────────────────────────────────────┤
 │                              │                                  │
-│                              │ Uses for media storage           │
-│                              ▼                                  │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │                    oelala-storage                         │  │
-│  │               (Standalone Storage Product)                │  │
-│  │                                                           │  │
-│  │   Can be used by ANY application:                         │  │
-│  │   • Other AI tools                                        │  │
-│  │   • Media platforms                                       │  │
-│  │   • Backup solutions                                      │  │
-│  │   • Archive systems                                       │  │
-│  └───────────────────────────────────────────────────────────┘  │
-│                                                                  │
-└──────────────────────────────────────────────────────────────────┘
+│   oelala-backend ───────────────────────→  oelala-storage       │
+│   (Python/FastAPI)          │              (Coordinator)        │
+│                             │                    │              │
+│   • User auth               │                    │              │
+│   • Access control          │              ┌─────┴─────┐        │
+│   • Retention logic         │              ▼           ▼        │
+│   • X-Expires-At headers    │           Node 1      Node 2      │
+│                             │                                   │
+│                                                                 │
+│   Can be used by ANY application:                               │
+│   • Other AI tools                                              │
+│   • Media platforms                                             │
+│   • Archive systems                                             │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### oelala.ai Integration Points
 
 1. **Video output storage** - Generated videos stored in user buckets
-2. **Image uploads** - User-uploaded reference images
-3. **Model weights** - LoRA and checkpoint distribution (future)
-4. **CDN delivery** - Fast global access to generated content
+2. **Image uploads** - User-uploaded reference images  
+3. **Auto-upload** - ComfyUI outputs automatically stored
+4. **CDN delivery** - Fast global access via coordinator
+5. **Retention** - 6-month EU compliance via `X-Expires-At`
 
 ---
 
