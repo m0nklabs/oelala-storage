@@ -19,6 +19,7 @@ import (
 	"github.com/m0nklabs/oelala-storage/internal/auth"
 	"github.com/m0nklabs/oelala-storage/internal/bucket"
 	"github.com/m0nklabs/oelala-storage/internal/metrics"
+	"github.com/m0nklabs/oelala-storage/internal/signedurl"
 	"github.com/m0nklabs/oelala-storage/internal/storage"
 )
 
@@ -32,6 +33,8 @@ type Server struct {
 	tlsConfig      *tls.Config
 	metricsEnabled bool
 	adminServer    *AdminServer
+	signer         *signedurl.Signer
+	baseURL        string
 }
 
 // ServerOption configures the server
@@ -69,6 +72,16 @@ func WithBucketStore(bs *bucket.Store) ServerOption {
 func WithAdminServer(admin *AdminServer) ServerOption {
 	return func(s *Server) {
 		s.adminServer = admin
+	}
+}
+
+// WithSigningSecret enables signed URL generation
+func WithSigningSecret(secret string, baseURL string) ServerOption {
+	return func(s *Server) {
+		if secret != "" {
+			s.signer = signedurl.NewSigner(secret)
+			s.baseURL = baseURL
+		}
 	}
 }
 
@@ -143,6 +156,12 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/peers", s.listPeers)
 	s.app.Post("/peers", s.addPeer)
 	s.app.Delete("/peers/:id", s.removePeer)
+
+	// Signed URL routes (before bucket wildcards, but require signer)
+	if s.signer != nil {
+		s.app.Post("/signed-url", s.createSignedURL)
+		s.app.Get("/s/:bucket/*", s.getSignedObject) // Public: no auth required
+	}
 
 	// S3-compatible routes (with wildcard for nested keys)
 	// Fiber uses :key* for wildcard params that catch everything including slashes
@@ -496,4 +515,136 @@ func (s *Server) deleteBucket(c *fiber.Ctx) error {
 	}
 
 	return c.SendStatus(http.StatusNoContent)
+}
+
+// =============================================================================
+// Signed URL Endpoints
+// =============================================================================
+
+// SignedURLRequest is the request body for creating a signed URL
+type SignedURLRequest struct {
+	Bucket       string `json:"bucket"`
+	Key          string `json:"key"`
+	ExpiresIn    int    `json:"expires_in"`    // seconds (default: 3600)
+	MaxDownloads int    `json:"max_downloads"` // optional, 0 = unlimited
+}
+
+// POST /signed-url - Create a signed URL for accessing an object
+func (s *Server) createSignedURL(c *fiber.Ctx) error {
+	if s.signer == nil {
+		return c.Status(http.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "signed URLs not configured",
+		})
+	}
+
+	var req SignedURLRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid request body",
+		})
+	}
+
+	if req.Bucket == "" || req.Key == "" {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+			"error": "bucket and key are required",
+		})
+	}
+
+	// Default expiration: 1 hour
+	expiresIn := time.Duration(req.ExpiresIn) * time.Second
+	if expiresIn <= 0 {
+		expiresIn = time.Hour
+	}
+	// Max: 7 days
+	if expiresIn > 7*24*time.Hour {
+		expiresIn = 7 * 24 * time.Hour
+	}
+
+	// Verify the object exists
+	reader, obj, err := s.store.Get(req.Bucket, req.Key)
+	if err != nil {
+		return c.Status(http.StatusNotFound).JSON(fiber.Map{
+			"error": "object not found",
+		})
+	}
+	_ = reader.Close() // Just checking existence
+	_ = obj
+
+	params := signedurl.SignedURLParams{
+		Bucket:       req.Bucket,
+		Key:          req.Key,
+		ExpiresIn:    expiresIn,
+		MaxDownloads: req.MaxDownloads,
+	}
+
+	baseURL := s.baseURL
+	if baseURL == "" {
+		// Fallback: use request host
+		scheme := "http"
+		if c.Protocol() == "https" {
+			scheme = "https"
+		}
+		baseURL = fmt.Sprintf("%s://%s", scheme, c.Hostname())
+	}
+
+	result, err := s.signer.Generate(baseURL, params)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"url":        result.URL,
+		"expires_at": result.ExpiresAt.Format(time.RFC3339),
+		"bucket":     req.Bucket,
+		"key":        req.Key,
+	})
+}
+
+// GET /s/:bucket/* - Access object via signed URL (public, no auth)
+func (s *Server) getSignedObject(c *fiber.Ctx) error {
+	if s.signer == nil {
+		return c.Status(http.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "signed URLs not configured",
+		})
+	}
+
+	bucket := c.Params("bucket")
+	key := c.Params("*")
+	sig := c.Query("sig")
+	exp := c.Query("exp")
+	maxStr := c.Query("max")
+
+	// Verify signature
+	params, err := s.signer.Verify(bucket, key, sig, exp, maxStr)
+	if err != nil {
+		status := http.StatusForbidden
+		if err == signedurl.ErrExpired {
+			status = http.StatusGone // 410 Gone for expired URLs
+		}
+		return c.Status(status).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	// Get the object
+	reader, obj, err := s.store.Get(params.Bucket, params.Key)
+	if err != nil {
+		return c.Status(http.StatusNotFound).JSON(fiber.Map{
+			"error": "object not found",
+		})
+	}
+	defer func() { _ = reader.Close() }()
+
+	// Set headers
+	c.Set("Content-Length", strconv.FormatInt(obj.Size, 10))
+	if obj.ContentType != "" {
+		c.Set("Content-Type", obj.ContentType)
+	}
+	c.Set("Cache-Control", "public, max-age=86400") // Cache for 24h
+
+	// Stream the file
+	_, err = io.Copy(c.Response().BodyWriter(), reader)
+	return err
 }
