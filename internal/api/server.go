@@ -396,6 +396,9 @@ func (s *Server) putObject(c *fiber.Ctx) error {
 		_ = s.bucketStore.AddUsage(userID, size, 1)
 	}
 
+	// Record upload metrics
+	metrics.RecordUpload(bucketName, contentType, size)
+
 	// Include expiration in response if set
 	response := fiber.Map{
 		"key":          key,
@@ -439,13 +442,18 @@ func (s *Server) getObject(c *fiber.Ctx) error {
 
 		// Get size from blob info
 		blobInfo, _ := s.dedupStore.GetBlobInfo(hash)
+		var downloadSize int64
 		if blobInfo != nil {
+			downloadSize = blobInfo.Size
 			c.Set("Content-Length", fmt.Sprintf("%d", blobInfo.Size))
 		}
 		c.Set("X-Blob-Hash", hash)
 
 		// Stream the file
 		_, err = io.Copy(c.Response().BodyWriter(), reader)
+		if err == nil && downloadSize > 0 {
+			metrics.RecordDownload(bucket, downloadSize)
+		}
 		return err
 	}
 
@@ -465,6 +473,9 @@ func (s *Server) getObject(c *fiber.Ctx) error {
 
 	// Stream the file
 	_, err = io.Copy(c.Response().BodyWriter(), reader)
+	if err == nil {
+		metrics.RecordDownload(bucket, obj.Size)
+	}
 	return err
 }
 

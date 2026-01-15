@@ -117,6 +117,114 @@ var (
 		},
 		[]string{"user_id", "tier"},
 	)
+
+	// === Garbage Collection Metrics ===
+
+	// GCRunsTotal tracks total number of GC runs.
+	GCRunsTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "oelala_storage_gc_runs_total",
+			Help: "Total number of garbage collection runs",
+		},
+	)
+
+	// GCFilesDeleted tracks total files deleted by GC.
+	GCFilesDeleted = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "oelala_storage_gc_files_deleted_total",
+			Help: "Total files deleted by garbage collection",
+		},
+	)
+
+	// GCBytesFreed tracks total bytes freed by GC.
+	GCBytesFreed = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "oelala_storage_gc_bytes_freed_total",
+			Help: "Total bytes freed by garbage collection",
+		},
+	)
+
+	// GCErrors tracks total GC errors.
+	GCErrors = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "oelala_storage_gc_errors_total",
+			Help: "Total garbage collection errors",
+		},
+	)
+
+	// GCLastRunTimestamp tracks when GC last ran.
+	GCLastRunTimestamp = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "oelala_storage_gc_last_run_timestamp",
+			Help: "Unix timestamp of last GC run",
+		},
+	)
+
+	// GCLastRunDuration tracks duration of last GC run.
+	GCLastRunDuration = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "oelala_storage_gc_last_run_duration_seconds",
+			Help: "Duration of last GC run in seconds",
+		},
+	)
+
+	// === Deduplication Metrics ===
+
+	// DedupBlobsTotal tracks total unique blobs stored.
+	DedupBlobsTotal = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "oelala_storage_dedup_blobs_total",
+			Help: "Total unique blobs stored (deduplicated)",
+		},
+	)
+
+	// DedupRefsTotal tracks total references to blobs.
+	DedupRefsTotal = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "oelala_storage_dedup_refs_total",
+			Help: "Total references to deduplicated blobs",
+		},
+	)
+
+	// DedupBytesStored tracks actual bytes stored after dedup.
+	DedupBytesStored = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "oelala_storage_dedup_bytes_stored",
+			Help: "Actual bytes stored after deduplication",
+		},
+	)
+
+	// DedupBytesLogical tracks logical bytes (before dedup).
+	DedupBytesLogical = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "oelala_storage_dedup_bytes_logical",
+			Help: "Logical bytes before deduplication",
+		},
+	)
+
+	// DedupSavingsRatio tracks dedup savings as ratio (0-1).
+	DedupSavingsRatio = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "oelala_storage_dedup_savings_ratio",
+			Help: "Deduplication savings ratio (0=no savings, 1=100% deduped)",
+		},
+	)
+
+	// DedupHits tracks cache hits (existing blob reused).
+	DedupHits = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "oelala_storage_dedup_hits_total",
+			Help: "Total deduplication cache hits (existing blob reused)",
+		},
+	)
+
+	// DedupMisses tracks cache misses (new blob stored).
+	DedupMisses = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "oelala_storage_dedup_misses_total",
+			Help: "Total deduplication cache misses (new blob stored)",
+		},
+	)
 )
 
 // Init registers all Prometheus metrics collectors.
@@ -126,6 +234,12 @@ func Init() {
 		ObjectsTotal, StorageBytes, RequestsTotal, RequestDuration,
 		UploadBytes, DownloadBytes, SyncObjectsTotal, SyncBytes,
 		SyncErrors, PeersConnected, QuotaBytes, QuotaUsedBytes,
+		// GC metrics
+		GCRunsTotal, GCFilesDeleted, GCBytesFreed, GCErrors,
+		GCLastRunTimestamp, GCLastRunDuration,
+		// Dedup metrics
+		DedupBlobsTotal, DedupRefsTotal, DedupBytesStored, DedupBytesLogical,
+		DedupSavingsRatio, DedupHits, DedupMisses,
 	)
 }
 
@@ -176,4 +290,37 @@ func UpdateQuotaMetrics(userID, tier string, quota, used int64) {
 // UpdatePeersConnected updates the number of currently connected peers.
 func UpdatePeersConnected(count int) {
 	PeersConnected.Set(float64(count))
+}
+
+// === Garbage Collection Helper Functions ===
+
+// RecordGCRun records metrics for a completed GC run.
+func RecordGCRun(filesDeleted, bytesFreed, errors int64, durationSeconds float64) {
+	GCRunsTotal.Inc()
+	GCFilesDeleted.Add(float64(filesDeleted))
+	GCBytesFreed.Add(float64(bytesFreed))
+	GCErrors.Add(float64(errors))
+	GCLastRunTimestamp.SetToCurrentTime()
+	GCLastRunDuration.Set(durationSeconds)
+}
+
+// === Deduplication Helper Functions ===
+
+// UpdateDedupStats updates all deduplication metrics from stats.
+func UpdateDedupStats(blobs, refs, bytesStored, bytesLogical int64, savingsRatio float64) {
+	DedupBlobsTotal.Set(float64(blobs))
+	DedupRefsTotal.Set(float64(refs))
+	DedupBytesStored.Set(float64(bytesStored))
+	DedupBytesLogical.Set(float64(bytesLogical))
+	DedupSavingsRatio.Set(savingsRatio)
+}
+
+// RecordDedupHit records a deduplication cache hit.
+func RecordDedupHit() {
+	DedupHits.Inc()
+}
+
+// RecordDedupMiss records a deduplication cache miss.
+func RecordDedupMiss() {
+	DedupMisses.Inc()
 }

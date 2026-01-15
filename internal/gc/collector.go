@@ -14,6 +14,7 @@ import (
 
 	"github.com/m0nklabs/oelala-storage/internal/logging"
 	"github.com/m0nklabs/oelala-storage/internal/metadata"
+	"github.com/m0nklabs/oelala-storage/internal/metrics"
 	"github.com/m0nklabs/oelala-storage/internal/storage"
 	"go.uber.org/zap"
 )
@@ -186,6 +187,9 @@ func (c *Collector) RunOnce() Stats {
 	c.stats.TotalRuns++
 	c.stats.RunDurationMs = duration.Milliseconds()
 	c.mu.Unlock()
+
+	// Record Prometheus metrics
+	metrics.RecordGCRun(filesDeleted, bytesFreed, errors, duration.Seconds())
 
 	logging.Info("🗑️ Garbage collection complete",
 		zap.Int64("files_deleted", filesDeleted),

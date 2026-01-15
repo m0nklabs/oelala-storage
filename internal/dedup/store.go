@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
+	"github.com/m0nklabs/oelala-storage/internal/metrics"
 )
 
 // BlobInfo contains information about a content-addressed blob
@@ -156,8 +157,10 @@ func (s *Store) Store(bucket, key string, reader io.Reader) (string, int64, erro
 	if blobExists {
 		// Blob exists, just increment ref count
 		blobInfo.RefCount++
+		metrics.RecordDedupHit()
 	} else {
 		// New blob, move temp file to blob location
+		metrics.RecordDedupMiss()
 		if err := os.MkdirAll(filepath.Dir(blobPath), 0755); err != nil {
 			return "", 0, fmt.Errorf("failed to create blob directory: %w", err)
 		}
