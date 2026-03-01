@@ -205,6 +205,11 @@ func copyFile(src, dst string) error {
 	return err
 }
 
+// FilePath returns the absolute path to a stored file.
+func (s *Store) FilePath(bucket, key string) string {
+	return filepath.Join(s.basePath, bucket, key)
+}
+
 func matchPrefix(path, prefix string) bool {
 	return len(path) >= len(prefix) && path[:len(prefix)] == prefix
 }

@@ -5,11 +5,18 @@ package api
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -192,11 +199,12 @@ func (s *Server) setupRoutes() {
 
 	// S3-compatible routes (with wildcard for nested keys)
 	// Fiber uses :key* for wildcard params that catch everything including slashes
-	s.app.Put("/:bucket/*", s.putObject)
-	s.app.Get("/:bucket/*", s.getObject)
-	s.app.Delete("/:bucket/*", s.deleteObject)
-	s.app.Head("/:bucket/*", s.headObject)
-	s.app.Get("/:bucket", s.listObjects)
+	// PUT/DELETE require "writer" role; GET/HEAD/LIST require "reader" role
+	s.app.Put("/:bucket/*", requirePermission("writer"), s.putObject)
+	s.app.Get("/:bucket/*", requirePermission("reader"), s.getObject)
+	s.app.Delete("/:bucket/*", requirePermission("writer"), s.deleteObject)
+	s.app.Head("/:bucket/*", requirePermission("reader"), s.headObject)
+	s.app.Get("/:bucket", requirePermission("reader"), s.listObjects)
 }
 
 // gcStats returns garbage collection statistics
@@ -418,9 +426,9 @@ func (s *Server) putObject(c *fiber.Ctx) error {
 	return c.Status(http.StatusCreated).JSON(response)
 }
 
-// GET /:bucket/* - Download object
+// GET /:bucket/* - Download object with Range support, ETag, Cache-Control
 func (s *Server) getObject(c *fiber.Ctx) error {
-	bucket := c.Params("bucket")
+	bucketName := c.Params("bucket")
 	key := c.Params("*")
 
 	// If no key specified, list objects instead
@@ -429,52 +437,132 @@ func (s *Server) getObject(c *fiber.Ctx) error {
 	}
 
 	// Check if this was stored with deduplication
-	useDedup := bucket == "dedup" || (len(bucket) > 6 && bucket[:6] == "dedup/")
+	useDedup := bucketName == "dedup" || (len(bucketName) > 6 && bucketName[:6] == "dedup/")
 
 	if useDedup && s.dedupStore != nil {
-		reader, hash, err := s.dedupStore.Get(bucket, key)
-		if err != nil {
-			return c.Status(http.StatusNotFound).JSON(fiber.Map{
-				"error": err.Error(),
-			})
-		}
-		defer func() { _ = reader.Close() }()
+		return s.getObjectDedup(c, bucketName, key)
+	}
 
-		// Get size from blob info
-		blobInfo, _ := s.dedupStore.GetBlobInfo(hash)
-		var downloadSize int64
-		if blobInfo != nil {
-			downloadSize = blobInfo.Size
-			c.Set("Content-Length", fmt.Sprintf("%d", blobInfo.Size))
-		}
-		c.Set("X-Blob-Hash", hash)
+	// Regular storage: use serveFile for Range support
+	return s.serveFile(c, bucketName, key)
+}
 
-		// Stream the file
-		_, err = io.Copy(c.Response().BodyWriter(), reader)
-		if err == nil && downloadSize > 0 {
-			metrics.RecordDownload(bucket, downloadSize)
+// serveFile serves a file with Range requests, ETag, Cache-Control, and Content-Disposition support.
+func (s *Server) serveFile(c *fiber.Ctx, bucketName, key string) error {
+	filePath := s.store.FilePath(bucketName, key)
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "object not found"})
+		}
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	defer func() { _ = file.Close() }()
+
+	stat, err := file.Stat()
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	totalSize := stat.Size()
+	modTime := stat.ModTime()
+
+	// Determine content type
+	contentType := ""
+	if s.metadataStore != nil {
+		if meta, mErr := s.metadataStore.Get(bucketName, key); mErr == nil && meta.ContentType != "" {
+			contentType = meta.ContentType
+		}
+	}
+	if contentType == "" {
+		contentType = mime.TypeByExtension(filepath.Ext(key))
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	// ETag based on size + modification time (fast, no full-file hash)
+	etag := fmt.Sprintf(`"%x-%x"`, modTime.UnixNano(), totalSize)
+
+	// Check If-None-Match
+	if match := c.Get("If-None-Match"); match != "" && match == etag {
+		return c.SendStatus(http.StatusNotModified)
+	}
+
+	// Set standard headers
+	c.Set("ETag", etag)
+	c.Set("Last-Modified", modTime.UTC().Format(http.TimeFormat))
+	c.Set("Accept-Ranges", "bytes")
+	c.Set("Cache-Control", "public, max-age=86400") // 24h
+	c.Set("Content-Type", contentType)
+	setContentDisposition(c, key, contentType)
+
+	// Parse Range header
+	rangeHeader := c.Get("Range")
+	if rangeHeader == "" {
+		// Full response
+		c.Set("Content-Length", strconv.FormatInt(totalSize, 10))
+		c.Status(http.StatusOK)
+		_, err = io.Copy(c.Response().BodyWriter(), file)
+		if err == nil {
+			metrics.RecordDownload(bucketName, totalSize)
 		}
 		return err
 	}
 
-	// Regular storage
-	reader, obj, err := s.store.Get(bucket, key)
+	// Parse "bytes=start-end" range
+	start, end, ok := parseRange(rangeHeader, totalSize)
+	if !ok {
+		c.Set("Content-Range", fmt.Sprintf("bytes */%d", totalSize))
+		return c.SendStatus(http.StatusRequestedRangeNotSatisfiable)
+	}
+
+	partSize := end - start + 1
+	c.Set("Content-Length", strconv.FormatInt(partSize, 10))
+	c.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, totalSize))
+	c.Status(http.StatusPartialContent)
+
+	if _, err = file.Seek(start, io.SeekStart); err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	_, err = io.CopyN(c.Response().BodyWriter(), file, partSize)
+	if err == nil {
+		metrics.RecordDownload(bucketName, partSize)
+	}
+	return err
+}
+
+// getObjectDedup serves a deduplicated object (no Range support yet for dedup blobs).
+func (s *Server) getObjectDedup(c *fiber.Ctx, bucketName, key string) error {
+	reader, hash, err := s.dedupStore.Get(bucketName, key)
 	if err != nil {
-		return c.Status(http.StatusNotFound).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+		return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
 	}
 	defer func() { _ = reader.Close() }()
 
-	c.Set("Content-Length", fmt.Sprintf("%d", obj.Size))
-	if obj.ContentType != "" {
-		c.Set("Content-Type", obj.ContentType)
+	blobInfo, _ := s.dedupStore.GetBlobInfo(hash)
+	var downloadSize int64
+	if blobInfo != nil {
+		downloadSize = blobInfo.Size
+		c.Set("Content-Length", strconv.FormatInt(blobInfo.Size, 10))
+	}
+	c.Set("X-Blob-Hash", hash)
+	c.Set("ETag", `"`+hash+`"`)
+	c.Set("Cache-Control", "public, max-age=86400")
+
+	// Content-type from metadata
+	if s.metadataStore != nil {
+		if meta, mErr := s.metadataStore.Get(bucketName, key); mErr == nil && meta.ContentType != "" {
+			c.Set("Content-Type", meta.ContentType)
+			setContentDisposition(c, key, meta.ContentType)
+		}
 	}
 
-	// Stream the file
 	_, err = io.Copy(c.Response().BodyWriter(), reader)
-	if err == nil {
-		metrics.RecordDownload(bucket, obj.Size)
+	if err == nil && downloadSize > 0 {
+		metrics.RecordDownload(bucketName, downloadSize)
 	}
 	return err
 }
@@ -545,43 +633,138 @@ func (s *Server) deleteObject(c *fiber.Ctx) error {
 	return c.SendStatus(http.StatusNoContent)
 }
 
-// HEAD /:bucket/* - Object metadata
+// HEAD /:bucket/* - Object metadata with Content-Type, ETag, Accept-Ranges
 func (s *Server) headObject(c *fiber.Ctx) error {
-	bucket := c.Params("bucket")
+	bucketName := c.Params("bucket")
 	key := c.Params("*")
 
-	if !s.store.Exists(bucket, key) {
+	if !s.store.Exists(bucketName, key) {
 		return c.SendStatus(http.StatusNotFound)
 	}
 
-	reader, obj, err := s.store.Get(bucket, key)
+	reader, obj, err := s.store.Get(bucketName, key)
 	if err != nil {
 		return c.SendStatus(http.StatusNotFound)
 	}
 	_ = reader.Close()
 
-	c.Set("Content-Length", fmt.Sprintf("%d", obj.Size))
+	c.Set("Content-Length", strconv.FormatInt(obj.Size, 10))
+	c.Set("Accept-Ranges", "bytes")
+
+	// Content-type from metadata or mime
+	contentType := ""
+	if s.metadataStore != nil {
+		if meta, mErr := s.metadataStore.Get(bucketName, key); mErr == nil && meta.ContentType != "" {
+			contentType = meta.ContentType
+		}
+	}
+	if contentType == "" {
+		contentType = mime.TypeByExtension(filepath.Ext(key))
+	}
+	if contentType != "" {
+		c.Set("Content-Type", contentType)
+	}
+
+	// ETag
+	etag := fmt.Sprintf(`"%x-%x"`, obj.ModifiedAt.UnixNano(), obj.Size)
+	c.Set("ETag", etag)
+	c.Set("Last-Modified", obj.ModifiedAt.UTC().Format(http.TimeFormat))
+
 	return c.SendStatus(http.StatusOK)
 }
 
-// GET /:bucket - List objects
+// GET /:bucket - List objects with pagination (max_keys, marker, delimiter)
 func (s *Server) listObjects(c *fiber.Ctx) error {
-	bucket := c.Params("bucket")
+	bucketName := c.Params("bucket")
 	prefix := c.Query("prefix", "")
-
-	objects, err := s.store.List(bucket, prefix)
-	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+	delimiter := c.Query("delimiter", "")
+	marker := c.Query("marker", "")
+	maxKeys, _ := strconv.Atoi(c.Query("max_keys", "1000"))
+	if maxKeys <= 0 {
+		maxKeys = 1000
+	}
+	if maxKeys > 10000 {
+		maxKeys = 10000
 	}
 
-	return c.JSON(fiber.Map{
-		"bucket":  bucket,
-		"prefix":  prefix,
-		"objects": objects,
-		"count":   len(objects),
-	})
+	objects, err := s.store.List(bucketName, prefix)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Sort by key for consistent marker-based pagination
+	sort.Slice(objects, func(i, j int) bool { return objects[i].Key < objects[j].Key })
+
+	// Apply marker (skip everything <= marker)
+	startIdx := 0
+	if marker != "" {
+		for i, obj := range objects {
+			if obj.Key > marker {
+				startIdx = i
+				break
+			}
+			if i == len(objects)-1 {
+				startIdx = len(objects) // marker is beyond all keys
+			}
+		}
+	}
+
+	// Handle delimiter (virtual directories)
+	var commonPrefixes []string
+	var filteredObjects []*storage.Object
+
+	if delimiter != "" {
+		seen := make(map[string]bool)
+		for idx := startIdx; idx < len(objects); idx++ {
+			obj := objects[idx]
+			rel := obj.Key
+			if prefix != "" {
+				rel = strings.TrimPrefix(obj.Key, prefix)
+			}
+			if delimIdx := strings.Index(rel, delimiter); delimIdx >= 0 {
+				cp := prefix + rel[:delimIdx+len(delimiter)]
+				if !seen[cp] {
+					seen[cp] = true
+					commonPrefixes = append(commonPrefixes, cp)
+				}
+			} else {
+				filteredObjects = append(filteredObjects, obj)
+			}
+		}
+	} else {
+		if startIdx < len(objects) {
+			filteredObjects = objects[startIdx:]
+		}
+	}
+
+	// Apply max_keys
+	isTruncated := false
+	nextMarker := ""
+	if len(filteredObjects) > maxKeys {
+		isTruncated = true
+		nextMarker = filteredObjects[maxKeys-1].Key
+		filteredObjects = filteredObjects[:maxKeys]
+	}
+
+	response := fiber.Map{
+		"bucket":       bucketName,
+		"prefix":       prefix,
+		"objects":      filteredObjects,
+		"count":        len(filteredObjects),
+		"max_keys":     maxKeys,
+		"is_truncated": isTruncated,
+	}
+	if nextMarker != "" {
+		response["next_marker"] = nextMarker
+	}
+	if marker != "" {
+		response["marker"] = marker
+	}
+	if len(commonPrefixes) > 0 {
+		response["common_prefixes"] = commonPrefixes
+	}
+
+	return c.JSON(response)
 }
 
 // Peer management (stubs for now)
@@ -861,4 +1044,124 @@ func (s *Server) getSignedObject(c *fiber.Ctx) error {
 	// Stream the file
 	_, err = io.Copy(c.Response().BodyWriter(), reader)
 	return err
+}
+
+// =============================================================================
+// Helper functions
+// =============================================================================
+
+// parseRange parses an HTTP Range header like "bytes=0-1023".
+// Returns start, end (inclusive), and ok.
+func parseRange(rangeHeader string, totalSize int64) (int64, int64, bool) {
+	if !strings.HasPrefix(rangeHeader, "bytes=") {
+		return 0, 0, false
+	}
+	spec := strings.TrimPrefix(rangeHeader, "bytes=")
+	parts := strings.SplitN(spec, "-", 2)
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+
+	var start, end int64
+	var err error
+
+	if parts[0] == "" {
+		// Suffix range: bytes=-500 (last 500 bytes)
+		suffix, sErr := strconv.ParseInt(parts[1], 10, 64)
+		if sErr != nil || suffix <= 0 {
+			return 0, 0, false
+		}
+		start = totalSize - suffix
+		if start < 0 {
+			start = 0
+		}
+		end = totalSize - 1
+	} else {
+		start, err = strconv.ParseInt(parts[0], 10, 64)
+		if err != nil || start < 0 || start >= totalSize {
+			return 0, 0, false
+		}
+		if parts[1] == "" {
+			end = totalSize - 1
+		} else {
+			end, err = strconv.ParseInt(parts[1], 10, 64)
+			if err != nil || end < start {
+				return 0, 0, false
+			}
+			if end >= totalSize {
+				end = totalSize - 1
+			}
+		}
+	}
+
+	return start, end, true
+}
+
+// setContentDisposition sets Content-Disposition header based on query params and content type.
+func setContentDisposition(c *fiber.Ctx, key, contentType string) {
+	filename := filepath.Base(key)
+	download := c.Query("download", "")
+
+	if download == "true" || download == "1" {
+		c.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+		return
+	}
+
+	// For non-browser-safe types, default to attachment
+	if contentType != "" &&
+		!strings.HasPrefix(contentType, "image/") &&
+		!strings.HasPrefix(contentType, "video/") &&
+		!strings.HasPrefix(contentType, "audio/") &&
+		!strings.HasPrefix(contentType, "text/") &&
+		contentType != "application/pdf" {
+		c.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+		return
+	}
+
+	// Inline for browser-safe types
+	c.Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, filename))
+}
+
+// requirePermission returns middleware that checks user permission.
+// Permissions: "reader" allows GET/HEAD/LIST; "writer" allows PUT/DELETE.
+// If auth is not enabled (no user context), the request passes through.
+func requirePermission(permission string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		user := auth.GetUser(c)
+		if user == nil {
+			// No auth middleware configured; allow (backward-compatible)
+			return c.Next()
+		}
+
+		// Admin role has all permissions
+		for _, role := range user.Roles {
+			if role == "admin" || role == permission {
+				return c.Next()
+			}
+		}
+
+		// API keys without explicit roles default to full access (backward-compatible)
+		if len(user.Roles) == 0 {
+			return c.Next()
+		}
+
+		return c.Status(http.StatusForbidden).JSON(fiber.Map{
+			"error": fmt.Sprintf("insufficient permissions: %s required", permission),
+		})
+	}
+}
+
+// computeFileHash computes SHA-256 hash of a file for use as ETag.
+func computeFileHash(filePath string) string {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }

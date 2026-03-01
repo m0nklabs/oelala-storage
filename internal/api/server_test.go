@@ -351,7 +351,7 @@ func TestAuthenticatedServer(t *testing.T) {
 			"test-api-key": {
 				UserID: "user123",
 				TierID: "pro",
-				Roles:  []string{"write"},
+				Roles:  []string{"writer", "reader"},
 			},
 		},
 		SkipPaths: []string{"/health", "/status"},
