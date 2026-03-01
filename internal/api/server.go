@@ -1124,8 +1124,20 @@ func setContentDisposition(c *fiber.Ctx, key, contentType string) {
 
 // requirePermission returns middleware that checks user permission.
 // Permissions: "reader" allows GET/HEAD/LIST; "writer" allows PUT/DELETE.
+// Accepts both short ("read"/"write") and long ("reader"/"writer") forms.
 // If auth is not enabled (no user context), the request passes through.
 func requirePermission(permission string) fiber.Handler {
+	// Build the set of role names that satisfy this permission
+	var accepted []string
+	switch permission {
+	case "reader", "read":
+		accepted = []string{"reader", "read", "admin"}
+	case "writer", "write":
+		accepted = []string{"writer", "write", "admin"}
+	default:
+		accepted = []string{permission, "admin"}
+	}
+
 	return func(c *fiber.Ctx) error {
 		user := auth.GetUser(c)
 		if user == nil {
@@ -1133,16 +1145,17 @@ func requirePermission(permission string) fiber.Handler {
 			return c.Next()
 		}
 
-		// Admin role has all permissions
-		for _, role := range user.Roles {
-			if role == "admin" || role == permission {
-				return c.Next()
-			}
-		}
-
 		// API keys without explicit roles default to full access (backward-compatible)
 		if len(user.Roles) == 0 {
 			return c.Next()
+		}
+
+		for _, role := range user.Roles {
+			for _, a := range accepted {
+				if role == a {
+					return c.Next()
+				}
+			}
 		}
 
 		return c.Status(http.StatusForbidden).JSON(fiber.Map{
