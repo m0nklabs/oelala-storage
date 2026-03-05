@@ -6,7 +6,8 @@ toolchain go1.24.11
 
 require (
 	github.com/dgraph-io/badger/v4 v4.9.0
-	github.com/gofiber/fiber/v2 v2.52.10
+	github.com/dustin/go-humanize v1.0.1
+	github.com/gofiber/fiber/v2 v2.52.12
 	github.com/hashicorp/mdns v1.0.6
 	github.com/prometheus/client_golang v1.23.2
 	github.com/spf13/cobra v1.9.1
@@ -21,7 +22,6 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
-	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
