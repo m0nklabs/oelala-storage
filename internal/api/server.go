@@ -122,7 +122,13 @@ func NewServer(store *storage.Store, port int, opts ...ServerOption) *Server {
 	// Middleware
 	app.Use(recover.New())
 	app.Use(logger.New())
-	app.Use(cors.New())
+	app.Use(cors.New(cors.Config{
+		AllowOrigins:     "https://oelala.xyz,http://oelala.xyz,http://localhost:5174,http://localhost:5173,http://localhost:3000,http://192.168.1.2:5174,http://192.168.1.35:5174",
+		AllowMethods:     "GET,HEAD,OPTIONS",
+		AllowHeaders:     "Origin,Content-Type,Accept",
+		AllowCredentials: false,
+		MaxAge:           86400,
+	}))
 
 	s := &Server{
 		app:   app,
