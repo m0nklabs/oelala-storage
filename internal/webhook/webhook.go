@@ -54,16 +54,16 @@ type QuotaEventData struct {
 
 // GCEventData contains data for garbage collection events.
 type GCEventData struct {
-	FilesRemoved  int   `json:"files_removed"`
-	BytesRecovered int64 `json:"bytes_recovered"`
+	FilesRemoved   int    `json:"files_removed"`
+	BytesRecovered int64  `json:"bytes_recovered"`
 	Duration       string `json:"duration"`
 }
 
 // Config holds webhook configuration.
 type Config struct {
-	Enabled  bool             `mapstructure:"enabled"`
-	Targets  []TargetConfig   `mapstructure:"targets"`
-	Retry    RetryConfig      `mapstructure:"retry"`
+	Enabled bool           `mapstructure:"enabled"`
+	Targets []TargetConfig `mapstructure:"targets"`
+	Retry   RetryConfig    `mapstructure:"retry"`
 }
 
 // TargetConfig holds a single webhook target URL and its filters.
@@ -81,12 +81,12 @@ type RetryConfig struct {
 
 // Dispatcher manages async webhook delivery.
 type Dispatcher struct {
-	config  Config
-	nodeID  string
-	queue   chan deliveryJob
-	client  *http.Client
-	wg      sync.WaitGroup
-	stopCh  chan struct{}
+	config Config
+	nodeID string
+	queue  chan deliveryJob
+	client *http.Client
+	wg     sync.WaitGroup
+	stopCh chan struct{}
 }
 
 type deliveryJob struct {

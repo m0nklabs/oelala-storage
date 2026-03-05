@@ -11,15 +11,15 @@ import (
 
 // Config represents the application configuration structure.
 type Config struct {
-	Node     NodeConfig        `mapstructure:"node"`
-	Storage  StorageConfig     `mapstructure:"storage"`
-	API      APIConfig         `mapstructure:"api"`
-	Sync     SyncConfig        `mapstructure:"sync"`
-	Security SecurityConfig    `mapstructure:"security"`
-	Logging  LoggingConfig     `mapstructure:"logging"`
-	Metrics  MetricsConfig     `mapstructure:"metrics"`
-	TLS      TLSConfig         `mapstructure:"tls"`
-	Webhooks webhook.Config    `mapstructure:"webhooks"`
+	Node     NodeConfig     `mapstructure:"node"`
+	Storage  StorageConfig  `mapstructure:"storage"`
+	API      APIConfig      `mapstructure:"api"`
+	Sync     SyncConfig     `mapstructure:"sync"`
+	Security SecurityConfig `mapstructure:"security"`
+	Logging  LoggingConfig  `mapstructure:"logging"`
+	Metrics  MetricsConfig  `mapstructure:"metrics"`
+	TLS      TLSConfig      `mapstructure:"tls"`
+	Webhooks webhook.Config `mapstructure:"webhooks"`
 }
 
 // NodeConfig holds node-specific configuration.
