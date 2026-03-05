@@ -66,52 +66,65 @@ func (s *Server) Handshake(_ context.Context, _ *pb.HandshakeRequest) (*pb.Hands
 
 // ListObjects implements SyncService.ListObjects
 func (s *Server) ListObjects(_ context.Context, req *pb.ListObjectsRequest) (*pb.ListObjectsResponse, error) {
-	bucket := req.Bucket
-	if bucket == "" {
-		bucket = "default"
-	}
-
-	objects, err := s.store.List(bucket, req.Prefix)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert to proto
-	var pbObjects []*pb.ObjectMeta
+	var allObjects []*pb.ObjectMeta
 	excludeSet := make(map[string]bool)
 	for _, h := range req.ExcludeHashes {
 		excludeSet[h] = true
 	}
 
-	for _, obj := range objects {
-		// Skip if we already have it
-		if excludeSet[obj.Hash] {
+	// When bucket is empty, list objects from ALL content buckets
+	var bucketsToList []string
+	if req.Bucket != "" {
+		bucketsToList = []string{req.Bucket}
+	} else {
+		buckets, err := s.store.ListBuckets()
+		if err != nil {
+			return nil, fmt.Errorf("list buckets: %w", err)
+		}
+		for _, b := range buckets {
+			if !internalBuckets[b] {
+				bucketsToList = append(bucketsToList, b)
+			}
+		}
+	}
+
+	for _, bucket := range bucketsToList {
+		objects, err := s.store.List(bucket, req.Prefix)
+		if err != nil {
+			// Skip buckets that fail to list (e.g. symlinks)
 			continue
 		}
 
-		// Filter by timestamp
-		if req.SinceTimestamp > 0 && obj.ModifiedAt.Unix() < req.SinceTimestamp {
-			continue
-		}
+		for _, obj := range objects {
+			if excludeSet[obj.Hash] {
+				continue
+			}
+			if req.SinceTimestamp > 0 && obj.ModifiedAt.Unix() < req.SinceTimestamp {
+				continue
+			}
 
-		pbObjects = append(pbObjects, &pb.ObjectMeta{
-			Bucket:      obj.Bucket,
-			Key:         obj.Key,
-			Hash:        obj.Hash,
-			Size:        obj.Size,
-			ContentType: obj.ContentType,
-			CreatedAt:   obj.CreatedAt.Unix(),
-			ModifiedAt:  obj.ModifiedAt.Unix(),
-		})
+			allObjects = append(allObjects, &pb.ObjectMeta{
+				Bucket:      obj.Bucket,
+				Key:         obj.Key,
+				Hash:        obj.Hash,
+				Size:        obj.Size,
+				ContentType: obj.ContentType,
+				CreatedAt:   obj.CreatedAt.Unix(),
+				ModifiedAt:  obj.ModifiedAt.Unix(),
+			})
 
-		if req.Limit > 0 && len(pbObjects) >= int(req.Limit) {
-			break
+			if req.Limit > 0 && len(allObjects) >= int(req.Limit) {
+				return &pb.ListObjectsResponse{
+					Objects: allObjects,
+					HasMore: true,
+				}, nil
+			}
 		}
 	}
 
 	return &pb.ListObjectsResponse{
-		Objects: pbObjects,
-		HasMore: len(pbObjects) == int(req.Limit),
+		Objects: allObjects,
+		HasMore: false,
 	}, nil
 }
 

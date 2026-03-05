@@ -153,6 +153,21 @@ func (s *Store) Exists(bucket, key string) bool {
 	return err == nil
 }
 
+// ListBuckets returns all top-level bucket names (directories in basePath)
+func (s *Store) ListBuckets() ([]string, error) {
+	entries, err := os.ReadDir(s.basePath)
+	if err != nil {
+		return nil, err
+	}
+	var buckets []string
+	for _, e := range entries {
+		if e.IsDir() {
+			buckets = append(buckets, e.Name())
+		}
+	}
+	return buckets, nil
+}
+
 // List returns all objects in a bucket with optional prefix
 func (s *Store) List(bucket, prefix string) ([]*Object, error) {
 	bucketPath := filepath.Join(s.basePath, bucket)

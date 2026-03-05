@@ -5,10 +5,12 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -33,6 +35,19 @@ var (
 	buildTime string
 	cfgFile   string
 )
+
+// parseHostPort splits a "host:port" string into host and port int.
+func parseHostPort(addr string) (string, int, error) {
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", 0, err
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid port %q: %w", portStr, err)
+	}
+	return host, port, nil
+}
 
 // Execute runs the root command with the provided version and build time.
 func Execute(v, bt string) error {
@@ -219,8 +234,19 @@ var serveCmd = &cobra.Command{
 				logging.Info("mDNS peer discovery started")
 			}
 
+			// Add static peers from config
+			for _, peer := range cfg.Sync.Peers {
+				host, portStr, err := parseHostPort(peer.URL)
+				if err != nil {
+					logging.Warn("Invalid static peer URL", zap.String("url", peer.URL), zap.Error(err))
+					continue
+				}
+				discovery.AddStaticPeer(host, portStr)
+				logging.Info("Static peer added", zap.String("host", host), zap.Int("port", portStr))
+			}
+
 			// Start replicator
-			replicator := sync.NewReplicator(store, cfg.Node.ID, discovery)
+			replicator := sync.NewReplicator(store, cfg.Node.ID, discovery, logging.Logger)
 			interval := time.Duration(cfg.Sync.IntervalMinutes) * time.Minute
 			if interval == 0 {
 				interval = 15 * time.Minute

@@ -51,6 +51,28 @@ func (d *Discovery) OnChange(fn func(*Peer, bool)) {
 	d.onChange = fn
 }
 
+// AddStaticPeer registers a peer from config (bypasses mDNS)
+func (d *Discovery) AddStaticPeer(host string, port int) {
+	peerID := fmt.Sprintf("static-%s:%d", host, port)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	peer := &Peer{
+		ID:        peerID,
+		Host:      host,
+		Port:      port,
+		Version:   "unknown",
+		LastSeen:  time.Now(),
+		Available: true,
+	}
+	d.peers[peerID] = peer
+
+	if d.onChange != nil {
+		d.onChange(peer, true)
+	}
+}
+
 // Start begins advertising and discovering peers
 func (d *Discovery) Start(ctx context.Context) error {
 	// Start advertising ourselves
@@ -213,6 +235,11 @@ func (d *Discovery) pruneStale() {
 
 	staleThreshold := time.Now().Add(-2 * time.Minute)
 	for id, peer := range d.peers {
+		// Never prune static peers
+		if len(id) > 7 && id[:7] == "static-" {
+			peer.LastSeen = time.Now()
+			continue
+		}
 		if peer.LastSeen.Before(staleThreshold) {
 			delete(d.peers, id)
 			if d.onChange != nil {
