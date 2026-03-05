@@ -26,6 +26,7 @@ import (
 	"github.com/m0nklabs/oelala-storage/internal/storage"
 	"github.com/m0nklabs/oelala-storage/internal/sync"
 	internaltls "github.com/m0nklabs/oelala-storage/internal/tls"
+	"github.com/m0nklabs/oelala-storage/internal/webhook"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -334,6 +335,14 @@ var serveCmd = &cobra.Command{
 			logging.Info("Signed URLs enabled")
 		}
 
+		// Initialize webhook dispatcher
+		var webhookDispatcher *webhook.Dispatcher
+		if cfg.Webhooks.Enabled {
+			webhookDispatcher = webhook.NewDispatcher(cfg.Webhooks, cfg.Node.ID)
+			serverOpts = append(serverOpts, api.WithWebhooks(webhookDispatcher))
+			logging.Info("Webhooks enabled", zap.Int("targets", len(cfg.Webhooks.Targets)))
+		}
+
 		server := api.NewServer(store, cfg.API.HTTPPort, serverOpts...)
 
 		// Start garbage collector in background
@@ -356,6 +365,9 @@ var serveCmd = &cobra.Command{
 			<-quit
 			logging.Info("Shutting down...")
 			gcCancel() // Stop GC
+			if webhookDispatcher != nil {
+				webhookDispatcher.Stop()
+			}
 			if cancelReplicator != nil {
 				cancelReplicator()
 			}

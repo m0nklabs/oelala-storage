@@ -30,6 +30,7 @@ import (
 	"github.com/m0nklabs/oelala-storage/internal/metrics"
 	"github.com/m0nklabs/oelala-storage/internal/signedurl"
 	"github.com/m0nklabs/oelala-storage/internal/storage"
+	"github.com/m0nklabs/oelala-storage/internal/webhook"
 )
 
 // Server handles HTTP API requests
@@ -48,6 +49,7 @@ type Server struct {
 	baseURL        string
 	gcRunOnce      func() interface{} // For triggering GC via API
 	gcGetStats     func() interface{} // For getting GC stats
+	webhooks       *webhook.Dispatcher
 }
 
 // ServerOption configures the server
@@ -95,6 +97,13 @@ func WithSigningSecret(secret string, baseURL string) ServerOption {
 			s.signer = signedurl.NewSigner(secret)
 			s.baseURL = baseURL
 		}
+	}
+}
+
+// WithWebhooks sets the webhook dispatcher
+func WithWebhooks(d *webhook.Dispatcher) ServerOption {
+	return func(s *Server) {
+		s.webhooks = d
 	}
 }
 
@@ -413,6 +422,18 @@ func (s *Server) putObject(c *fiber.Ctx) error {
 	// Record upload metrics
 	metrics.RecordUpload(bucketName, contentType, size)
 
+	// Emit webhook event
+	if s.webhooks != nil {
+		s.webhooks.Emit(webhook.EventFileUploaded, webhook.FileEventData{
+			Bucket:      bucketName,
+			Key:         key,
+			Size:        size,
+			ContentType: contentType,
+			Hash:        hash,
+			UserID:      userID,
+		})
+	}
+
 	// Include expiration in response if set
 	response := fiber.Map{
 		"key":          key,
@@ -634,6 +655,16 @@ func (s *Server) deleteObject(c *fiber.Ctx) error {
 	// Update usage after successful delete
 	if s.bucketStore != nil && userID != "" && fileSize > 0 {
 		_ = s.bucketStore.AddUsage(userID, -fileSize, -1)
+	}
+
+	// Emit webhook event
+	if s.webhooks != nil {
+		s.webhooks.Emit(webhook.EventFileDeleted, webhook.FileEventData{
+			Bucket: bucketName,
+			Key:    key,
+			Size:   fileSize,
+			UserID: userID,
+		})
 	}
 
 	return c.SendStatus(http.StatusNoContent)

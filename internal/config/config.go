@@ -5,19 +5,21 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/m0nklabs/oelala-storage/internal/webhook"
 	"github.com/spf13/viper"
 )
 
 // Config represents the application configuration structure.
 type Config struct {
-	Node     NodeConfig     `mapstructure:"node"`
-	Storage  StorageConfig  `mapstructure:"storage"`
-	API      APIConfig      `mapstructure:"api"`
-	Sync     SyncConfig     `mapstructure:"sync"`
-	Security SecurityConfig `mapstructure:"security"`
-	Logging  LoggingConfig  `mapstructure:"logging"`
-	Metrics  MetricsConfig  `mapstructure:"metrics"`
-	TLS      TLSConfig      `mapstructure:"tls"`
+	Node     NodeConfig        `mapstructure:"node"`
+	Storage  StorageConfig     `mapstructure:"storage"`
+	API      APIConfig         `mapstructure:"api"`
+	Sync     SyncConfig        `mapstructure:"sync"`
+	Security SecurityConfig    `mapstructure:"security"`
+	Logging  LoggingConfig     `mapstructure:"logging"`
+	Metrics  MetricsConfig     `mapstructure:"metrics"`
+	TLS      TLSConfig         `mapstructure:"tls"`
+	Webhooks webhook.Config    `mapstructure:"webhooks"`
 }
 
 // NodeConfig holds node-specific configuration.

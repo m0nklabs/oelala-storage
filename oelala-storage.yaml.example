@@ -47,3 +47,17 @@ security:
     - name: "readonly"
       token: ""
       permissions: ["read"]
+
+# Webhook notifications for storage events
+webhooks:
+  enabled: false
+  targets:
+    - url: "https://api.oelala.xyz/webhooks/storage"
+      secret: "CHANGE_ME_HMAC_SECRET"
+      events: ["file.uploaded", "file.deleted"]  # Empty = all events
+    # - url: "https://example.com/webhook"
+    #   secret: "another-secret"
+    #   events: []  # All events
+  retry:
+    max_attempts: 3
+    backoff_secs: 5
