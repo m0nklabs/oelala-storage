@@ -46,7 +46,7 @@ A Go-based distributed storage service that enables:
 # Setup wizard
 ./oelala-storage setup
 # → Storage path: /mnt/data
-# → Coordinator: https://api.oelala.ai
+# → Coordinator: https://api.oelala.xyz
 # → API Key: oel_node_xxxx
 
 # Install as service
@@ -74,7 +74,7 @@ node:
   max_storage_gb: 500
 
 coordinator:
-  url: "https://api.oelala.ai"
+  url: "https://api.oelala.xyz"
   api_key: "oel_node_xxxxxxxxxxxx"
 
 server:

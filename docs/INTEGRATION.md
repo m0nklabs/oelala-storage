@@ -338,7 +338,7 @@ async def can_generate(user_id: str, tier_id: str, estimated_size_mb: int) -> tu
         return False, (
             f"Insufficient storage. Need {estimated_size_mb}MB, "
             f"have {available_mb:.1f}MB available. "
-            f"Upgrade at https://oelala.ai/upgrade"
+            f"Upgrade at https://oelala.xyz/upgrade"
         )
     
     return True, "Quota available"
@@ -390,7 +390,7 @@ except httpx.HTTPStatusError as e:
             "error": "quota_exceeded",
             "message": "Storage quota exceeded",
             "action": "upgrade_required",
-            "upgrade_url": "https://oelala.ai/upgrade"
+            "upgrade_url": "https://oelala.xyz/upgrade"
         }
 ```
 

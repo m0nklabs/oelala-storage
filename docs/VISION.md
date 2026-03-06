@@ -252,7 +252,7 @@ http://localhost:7990/admin/
 │                                                              │
 │  ┌─────────────────────────────────────────────────────────┐│
 │  │ Coordinator                                              ││
-│  │ URL: https://storage.oelala.ai                          ││
+│  │ URL: https://storage.oelala.xyz                         ││
 │  │ API Key: oel_xxxxxxxx...                                ││
 │  └─────────────────────────────────────────────────────────┘│
 │                                                              │

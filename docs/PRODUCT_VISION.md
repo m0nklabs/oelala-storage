@@ -231,13 +231,13 @@ Your Backend                          oelala-storage
 
 ---
 
-## 🔗 Integration with oelala.ai
+## 🔗 Integration with oelala.xyz
 
-oelala-storage was built for oelala.ai but is designed as a **standalone product**:
+oelala-storage was built for oelala.xyz but is designed as a **standalone product**:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         oelala.ai                               │
+│                        oelala.xyz                               │
 │                    (AI Video Generation)                        │
 ├─────────────────────────────────────────────────────────────────┤
 │                              │                                  │
@@ -258,7 +258,7 @@ oelala-storage was built for oelala.ai but is designed as a **standalone product
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### oelala.ai Integration Points
+### oelala.xyz Integration Points
 
 1. **Video output storage** - Generated videos stored in user buckets
 2. **Image uploads** - User-uploaded reference images  

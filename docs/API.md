@@ -657,7 +657,7 @@ All errors follow this format:
   "error": "storage_quota_exceeded",
   "used": 2147483648,
   "limit": 2147483648,
-  "upgrade_url": "https://oelala.ai/upgrade"
+    "upgrade_url": "https://oelala.xyz/upgrade"
 }
 ```
 

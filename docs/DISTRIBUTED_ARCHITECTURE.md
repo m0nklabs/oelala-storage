@@ -219,7 +219,7 @@ Each storage node can be accessed via:
 ```
 Request Flow:
                                                     
-  User → files.oelala.ai/user/video.mp4            
+   User → storage.oelala.xyz/user/video.mp4
            │                                        
            ▼                                        
        Cloudflare                                   
@@ -346,9 +346,9 @@ Coordinator verifies:
 ### File Access
 
 Public files:
-- Served directly via Cloudflare CDN
+- Served directly via Cloudflare/CDN-facing storage hostname
 - No authentication needed
-- URL: `files.oelala.ai/{bucket}/{key}`
+- URL: `storage.oelala.xyz/{bucket}/{key}`
 
 Private files:
 - Require signed URL from coordinator
