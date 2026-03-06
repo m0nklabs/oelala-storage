@@ -70,10 +70,10 @@ Think: coordinator-managed object storage with independent nodes, not a pure pee
 ### 1. Storage Node (oelala-storage binary)
 
 A lightweight Go binary that:
-- **Runs as a service** (Windows Service / systemd)
+- **Can run as a long-lived service** (service packaging is still evolving)
 - **Connects to coordinator** with API key
 - **Stores files** on local disk
-- **Reports health** via gRPC heartbeat
+- **Reports health** via periodic coordinator heartbeat
 - **Serves files** via HTTP (through Cloudflare tunnel or direct)
 
 #### Installation Flow
@@ -99,8 +99,8 @@ A lightweight Go binary that:
 │     │  Public IP:    (auto-detected or manual)                │ │
 │     └─────────────────────────────────────────────────────────┘ │
 │                                                                  │
-│  4. Install as service                                           │
-│     └─ oelala-storage install                                   │
+│  4. Run directly or wire into your service manager              │
+│     └─ systemd/Windows service packaging is not fully done yet  │
 │                                                                  │
 │  5. Node registers with coordinator                              │
 │     └─ Appears in oelala dashboard as "pending"                 │
@@ -245,17 +245,22 @@ Request Flow:
 
 Pieces already implemented or actively underway:
 
+- setup wizard CLI (`oelala-storage setup`)
 - coordinator client + heartbeat payloads in the storage service
+- coordinator-side node registry via Supabase `storage_nodes`
 - node config with `public_url`
+- admin storage network dashboard in Oelala
 - static-peer sync and replication-related improvements
-- storage admin visibility in Oelala frontend/backend
+- signed URL support for controlled private reads
 
 Pieces still evolving:
 
 - placement policy
+- upload routing decisions at coordinator level
 - full health and lag visibility across nodes
 - automated replication guarantees by tier
 - cleaner public hostname strategy across coordinator and nodes
+- service installer / packaging for Windows + systemd
 
 ## 📦 Replication
 
@@ -326,21 +331,20 @@ Monitor job runs every 5 minutes:
 
 ### API Keys
 
-- Generated via oelala dashboard
-- Scoped to specific node
-- Can be revoked
-- Format: `oel_node_<random32chars>`
+- Coordinator heartbeats currently use the configured coordinator API key
+- Transport today is `Authorization: Bearer <token>`
+- Node-scoped key lifecycle and richer approval flows are still evolving
 
 ### Node Authentication
 
 ```
 Node → Coordinator:
-  Header: X-Node-API-Key: oel_node_xxxx
+   Header: Authorization: Bearer <storage-node-token>
   
 Coordinator verifies:
-  1. API key exists in storage_nodes
-  2. Status is not 'suspended'
-  3. IP matches (optional strict mode)
+   1. Bearer token matches the configured storage node secret
+   2. Heartbeat payload is accepted and upserted into `storage_nodes`
+   3. Node stats and last heartbeat timestamp are updated
 ```
 
 ### File Access
@@ -357,32 +361,32 @@ Private files:
 
 ---
 
-## 🚀 MVP Scope
+## 🚀 Implementation Status Snapshot
 
 ### Phase 1: Single Node + Coordinator Skeleton
-- [ ] Node setup wizard (storage path, API key)
-- [ ] Windows service + systemd unit
-- [ ] gRPC heartbeat to coordinator
-- [ ] Coordinator node registry (Supabase)
-- [ ] Basic health dashboard
+- [x] Node setup wizard (`oelala-storage setup`)
+- [ ] Windows service + systemd packaging/install flow
+- [x] Coordinator heartbeat client and backend heartbeat endpoint
+- [x] Coordinator node registry (`storage_nodes` in Supabase)
+- [x] Basic admin storage network dashboard in Oelala
 
 ### Phase 2: Multi-Node + Replication
-- [ ] File placement table
-- [ ] Upload routing to nodes
-- [ ] Node-to-node replication (gRPC)
-- [ ] Degraded state recovery
-- [ ] Replication dashboard
+- [ ] File placement table and placement orchestration in production backend flow
+- [ ] Upload routing to nodes via coordinator placement decisions
+- [x] Node-to-node replication foundation via gRPC sync + replicator
+- [ ] Degraded state recovery / replica promotion automation
+- [ ] Replication dashboard and lag visibility
 
 ### Phase 3: Cloudflare Integration
-- [ ] cloudflared tunnel setup (automatic)
+- [ ] Automatic `cloudflared` tunnel setup
 - [ ] DNS management via Cloudflare API
-- [ ] CDN caching for public files
-- [ ] Signed URLs for private files
+- [ ] Coordinator-managed CDN policy for public files
+- [x] Signed URLs for private files
 
 ### Phase 4: User-Owned Nodes
-- [ ] "Contribute storage" UI in oelala
+- [ ] "Contribute storage" UI in Oelala
 - [ ] Reward system for contributors
-- [ ] Node performance metrics
+- [ ] Node performance metrics surfaced to operators
 - [ ] Fair scheduling across nodes
 
 ---
