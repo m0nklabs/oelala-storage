@@ -11,22 +11,32 @@ import (
 
 // Config represents the application configuration structure.
 type Config struct {
-	Node     NodeConfig     `mapstructure:"node"`
-	Storage  StorageConfig  `mapstructure:"storage"`
-	API      APIConfig      `mapstructure:"api"`
-	Sync     SyncConfig     `mapstructure:"sync"`
-	Security SecurityConfig `mapstructure:"security"`
-	Logging  LoggingConfig  `mapstructure:"logging"`
-	Metrics  MetricsConfig  `mapstructure:"metrics"`
-	TLS      TLSConfig      `mapstructure:"tls"`
-	Webhooks webhook.Config `mapstructure:"webhooks"`
+	Node        NodeConfig        `mapstructure:"node"`
+	Storage     StorageConfig     `mapstructure:"storage"`
+	API         APIConfig         `mapstructure:"api"`
+	Sync        SyncConfig        `mapstructure:"sync"`
+	Security    SecurityConfig    `mapstructure:"security"`
+	Logging     LoggingConfig     `mapstructure:"logging"`
+	Metrics     MetricsConfig     `mapstructure:"metrics"`
+	TLS         TLSConfig         `mapstructure:"tls"`
+	Webhooks    webhook.Config    `mapstructure:"webhooks"`
+	Coordinator CoordinatorConfig `mapstructure:"coordinator"`
+}
+
+// CoordinatorConfig holds the configuration for connecting to the main oelala Coordinator.
+type CoordinatorConfig struct {
+	Enabled       bool   `mapstructure:"enabled"`
+	URL           string `mapstructure:"url"`
+	APIKey        string `mapstructure:"api_key"`
+	HeartbeatSecs int    `mapstructure:"heartbeat_secs"`
 }
 
 // NodeConfig holds node-specific configuration.
 type NodeConfig struct {
-	ID   string `mapstructure:"id"`
-	Name string `mapstructure:"name"`
-	Type string `mapstructure:"type"` // primary, replica, edge, archive
+	ID        string `mapstructure:"id"`
+	Name      string `mapstructure:"name"`
+	Type      string `mapstructure:"type"`
+	PublicURL string `mapstructure:"public_url"`
 }
 
 // StorageConfig holds storage-specific configuration.
@@ -125,6 +135,10 @@ func Load(path string) (*Config, error) {
 	viper.SetDefault("metrics.port", 7992)
 	viper.SetDefault("tls.enabled", false)
 	viper.SetDefault("tls.auto_cert", true)
+
+	// Coordinator defaults
+	viper.SetDefault("coordinator.enabled", false)
+	viper.SetDefault("coordinator.heartbeat_secs", 60)
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {

@@ -228,3 +228,9 @@ func (s *Store) FilePath(bucket, key string) string {
 func matchPrefix(path, prefix string) bool {
 	return len(path) >= len(prefix) && path[:len(prefix)] == prefix
 }
+
+// SetFileTime updates the physical modification time of the file
+func (s *Store) SetFileTime(bucket, key string, mtime time.Time) error {
+	filePath := filepath.Join(s.basePath, bucket, key)
+	return os.Chtimes(filePath, mtime, mtime)
+}

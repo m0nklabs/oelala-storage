@@ -216,6 +216,7 @@ func (s *Server) setupRoutes() {
 	// Fiber uses :key* for wildcard params that catch everything including slashes
 	// PUT/DELETE require "writer" role; GET/HEAD/LIST require "reader" role
 	s.app.Put("/:bucket/*", requirePermission("writer"), s.putObject)
+	s.app.Post("/:bucket/*", requirePermission("writer"), s.postObject)
 	s.app.Get("/:bucket/*", requirePermission("reader"), s.getObject)
 	s.app.Delete("/:bucket/*", requirePermission("writer"), s.deleteObject)
 	s.app.Head("/:bucket/*", requirePermission("reader"), s.headObject)
@@ -451,6 +452,63 @@ func (s *Server) putObject(c *fiber.Ctx) error {
 	}
 
 	return c.Status(http.StatusCreated).JSON(response)
+}
+
+// POST /:bucket/* - Handle actions like 'move'
+func (s *Server) postObject(c *fiber.Ctx) error {
+	action := c.Query("action")
+	if action == "move" {
+		return s.moveObject(c)
+	}
+	return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "unsupported action"})
+}
+
+func (s *Server) moveObject(c *fiber.Ctx) error {
+	srcBucket := c.Params("bucket")
+	srcKey := c.Params("*")
+
+	var req struct {
+		DestBucket string `json:"dest_bucket"`
+		DestKey    string `json:"dest_key"`
+	}
+
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "invalid json payload"})
+	}
+
+	if req.DestBucket == "" {
+		req.DestBucket = srcBucket // Default to same bucket
+	}
+	if req.DestKey == "" {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "dest_key is required"})
+	}
+
+	useDedup := srcBucket == "dedup" || (len(srcBucket) > 6 && srcBucket[:6] == "dedup/")
+
+	if useDedup && s.dedupStore != nil {
+		err := s.dedupStore.Move(srcBucket, srcKey, req.DestBucket, req.DestKey)
+		if err != nil {
+			if err.Error() == "source not found" {
+				return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "source object not found"})
+			}
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": fmt.Sprintf("move failed: %v", err)})
+		}
+	} else {
+		// Use standard storage move
+		if !s.store.Exists(srcBucket, srcKey) {
+			return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "source object not found"})
+		}
+		err := s.store.Move(srcBucket, srcKey, req.DestBucket, req.DestKey)
+		if err != nil {
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": fmt.Sprintf("move failed: %v", err)})
+		}
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "moved successfully",
+		"source":  srcBucket + "/" + srcKey,
+		"dest":    req.DestBucket + "/" + req.DestKey,
+	})
 }
 
 // GET /:bucket/* - Download object with Range support, ETag, Cache-Control

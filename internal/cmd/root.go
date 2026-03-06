@@ -18,6 +18,7 @@ import (
 	"github.com/m0nklabs/oelala-storage/internal/apikeys"
 	"github.com/m0nklabs/oelala-storage/internal/auth"
 	"github.com/m0nklabs/oelala-storage/internal/config"
+	"github.com/m0nklabs/oelala-storage/internal/coordinator"
 	"github.com/m0nklabs/oelala-storage/internal/dedup"
 	"github.com/m0nklabs/oelala-storage/internal/gc"
 	"github.com/m0nklabs/oelala-storage/internal/logging"
@@ -345,6 +346,10 @@ var serveCmd = &cobra.Command{
 
 		server := api.NewServer(store, cfg.API.HTTPPort, serverOpts...)
 
+		// Start coordinator client
+		coordClient := coordinator.NewClient(&cfg.Coordinator, &cfg.Node, store, cfg.Storage.Path)
+		coordClient.Start(version)
+
 		// Start garbage collector in background
 		gcConfig := gc.DefaultConfig()
 		collector := gc.NewCollector(store, metadataStore, gcConfig)
@@ -373,6 +378,9 @@ var serveCmd = &cobra.Command{
 			}
 			if syncServer != nil {
 				syncServer.Stop()
+			}
+			if coordClient != nil {
+				coordClient.Stop()
 			}
 			if discovery != nil {
 				_ = discovery.Stop()
