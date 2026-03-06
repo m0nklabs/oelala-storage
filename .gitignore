@@ -32,8 +32,12 @@ dist/
 
 # Config (local secrets)
 oelala-storage.yaml
+deploy/local/
 *.pem
 *.key
 
 # Data directory
 data/
+
+# Local scratch and helper files
+scratch/
