@@ -1,7 +1,7 @@
 # oelala-storage: Distributed Architecture
 
-> **Status**: DRAFT - Vision document for distributed storage network
-> **Last Updated**: 2026-01-12
+> **Status**: ACTIVE DIRECTION - partially implemented architecture for the storage network
+> **Last Updated**: 2026-03-06
 
 ---
 
@@ -9,12 +9,12 @@
 
 oelala-storage is NOT just a storage service - it's a **distributed file network** where:
 
-1. **Users can run storage nodes** on their own hardware (Windows/Linux)
+1. **Operators can run storage nodes** on their own hardware (Windows/Linux)
 2. **A coordinator** manages node registration, file placement, and redundancy
 3. **Cloudflare** provides global access to stored content
 4. **Files are replicated** 2x or 3x across nodes for durability
 
-Think: BitTorrent meets S3, but for AI-generated content.
+Think: coordinator-managed object storage with independent nodes, not a pure peer-to-peer swarm.
 
 ---
 
@@ -51,7 +51,7 @@ Think: BitTorrent meets S3, but for AI-generated content.
           ▼                                        ▼
 ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐
 │   STORAGE NODE   │   │   STORAGE NODE   │   │   STORAGE NODE   │
-│   (flip's PC)    │   │   (user A)       │   │   (user B)       │
+│   (main/local)   │   │   (node-01)      │   │   (node-02)      │
 │                  │   │                  │   │                  │
 │  ┌────────────┐  │   │  ┌────────────┐  │   │  ┌────────────┐  │
 │  │ File Store │  │   │  │ File Store │  │   │  │ File Store │  │
@@ -93,7 +93,7 @@ A lightweight Go binary that:
 │  3. Configure:                                                   │
 │     ┌─────────────────────────────────────────────────────────┐ │
 │     │  Storage path: D:\oelala-storage                        │ │
-│     │  Coordinator:  https://api.oelala.ai                    │ │
+│     │  Coordinator:  https://api.oelala.xyz                   │ │
 │     │  API Key:      oel_xxxxxxxxxxxxxxxxxxxx                 │ │
 │     │  Max storage:  500 GB                                   │ │
 │     │  Public IP:    (auto-detected or manual)                │ │
@@ -121,7 +121,7 @@ node:
   max_storage_gb: 500
   
 coordinator:
-  url: "https://api.oelala.ai"
+   url: "https://api.oelala.xyz"
   api_key: "oel_xxxxxxxxxxxxxxxxxxxx"
   
 network:
@@ -141,7 +141,7 @@ The coordinator runs as part of the main oelala backend and:
 - **Registers nodes** and tracks their status
 - **Decides file placement** based on capacity and location
 - **Manages replication** (ensures 2x/3x copies exist)
-- **Handles Cloudflare** DNS/tunnel configuration
+- **Tracks Cloudflare-facing node URLs** and tunnel topology
 - **Routes requests** to correct nodes
 
 #### Node Registry (Supabase table)
@@ -209,7 +209,7 @@ Each storage node can be accessed via:
 **Option A: Cloudflare Tunnel (cloudflared)**
 - Node runs `cloudflared` alongside storage service
 - No port forwarding needed
-- Coordinator assigns `node-xyz.storage.oelala.ai` subdomain
+- Coordinator assigns or records node-specific hostnames
 
 **Option B: Direct with Cloudflare CDN**
 - Node has public IP with port forwarding
@@ -240,6 +240,22 @@ Request Flow:
 ```
 
 ---
+
+## Current Reality
+
+Pieces already implemented or actively underway:
+
+- coordinator client + heartbeat payloads in the storage service
+- node config with `public_url`
+- static-peer sync and replication-related improvements
+- storage admin visibility in Oelala frontend/backend
+
+Pieces still evolving:
+
+- placement policy
+- full health and lag visibility across nodes
+- automated replication guarantees by tier
+- cleaner public hostname strategy across coordinator and nodes
 
 ## 📦 Replication
 
