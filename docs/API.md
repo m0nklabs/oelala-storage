@@ -1,223 +1,189 @@
 # API Reference
 
-Complete API reference for oelala-storage service.
+HTTP API reference for `oelala-storage`.
 
 ## Base URL
 
-```
+```text
 http://localhost:7990
 ```
 
-For production, use your configured domain and port.
+Production deployments should use the configured node hostname instead.
 
 ## Authentication
 
-All API endpoints (except `/health` and `/status`) require authentication.
+All object endpoints require authentication unless a signed URL or explicitly public access path is in use.
 
-### Bearer Token (Recommended)
-
-Use JWT tokens from Supabase:
+### Canonical header
 
 ```http
-Authorization: Bearer <jwt_token>
+Authorization: Bearer <token>
 ```
 
-### API Key
+This is the expected header for normal application and backend access.
 
-For service-to-service communication:
+### Admin header
 
 ```http
-X-API-Key: <api_key>
+X-Admin-Secret: <secret>
 ```
 
-Or:
+Use this for admin/status surfaces that require elevated access.
 
-```http
-Authorization: ApiKey <api_key>
-```
+### Important
 
-## Rate Limiting
+- `X-Api-Key` is **not** the primary object API auth pattern.
+- Permission middleware accepts compatible `read/write` and `reader/writer` naming.
 
-Currently not implemented. Future versions will enforce rate limits based on subscription tier.
+## Core Endpoints
 
-## Endpoints
+### `GET /health`
 
-### Health Check
+Basic health check.
 
-Check service health status.
+**Auth**: none
 
-**Endpoint:** `GET /health`
+### `GET /status`
 
-**Authentication:** Not required
+Service status overview. Some deployments expose additional runtime details.
 
-**Response:**
+**Auth**: none
 
-```json
-{
-  "status": "healthy",
-  "service": "oelala-storage"
-}
-```
+### `PUT /:bucket/*`
 
-**Example:**
+Upload or overwrite an object.
+
+**Headers**:
+- `Authorization: Bearer <token>`
+- `Content-Type: <mime>` optional
+- `X-Expires-At: <RFC3339 timestamp>` optional retention metadata
+- `X-Modified-At: <RFC3339 timestamp>` optional modified time override
+
+**Response**:
+Typically returns object metadata including bucket, key, size, content type, and timestamps.
+
+**Example**:
 
 ```bash
-curl http://localhost:7990/health
-```
-
-```python
-import httpx
-
-async with httpx.AsyncClient() as client:
-    response = await client.get("http://localhost:7990/health")
-    print(response.json())
-```
-
----
-
-### Service Status
-
-Get detailed service status.
-
-**Endpoint:** `GET /status`
-
-**Authentication:** Not required
-
-**Response:**
-
-```json
-{
-  "status": "running"
-}
-```
-
-**Example:**
-
-```bash
-curl http://localhost:7990/status
-```
-
----
-
-### Upload Object
-
-Upload a file to storage.
-
-**Endpoint:** `PUT /:bucket/:key`
-
-**Authentication:** Required
-
-**Parameters:**
-- `bucket` (path) - Bucket name (e.g., "users")
-- `key` (path) - Object key/path (supports nested paths with `/`)
-
-**Headers:**
-- `Authorization` - Bearer token or API key
-- `Content-Type` - MIME type of the file (optional, auto-detected)
-
-**Request Body:** Binary file content
-
-**Response:** `201 Created`
-
-```json
-{
-  "bucket": "users",
-  "key": "123/media/video.mp4",
-  "hash": "sha256:a1b2c3d4...",
-  "size": 1048576,
-  "content_type": "video/mp4",
-  "created_at": "2026-01-12T10:30:00Z"
-}
-```
-
-**Example:**
-
-```bash
-# Upload a file
 curl -X PUT \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: video/mp4" \
-  --data-binary @video.mp4 \
-  http://localhost:7990/users/123e4567/media/video.mp4
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: video/mp4" \
+    --data-binary @video.mp4 \
+    http://localhost:7990/generated/oelala_t2v_20260306_120000_0.mp4
 ```
 
-```python
-import httpx
-from pathlib import Path
+### `GET /:bucket/*`
 
-async def upload_file(
-    bucket: str,
-    key: str,
-    file_path: Path,
-    jwt_token: str
-):
-    url = f"http://localhost:7990/{bucket}/{key}"
-    headers = {"Authorization": f"Bearer {jwt_token}"}
-    
-    with open(file_path, "rb") as f:
-        async with httpx.AsyncClient() as client:
-            response = await client.put(
-                url,
-                headers=headers,
-                content=f
-            )
-            response.raise_for_status()
-            return response.json()
+Download an object.
 
-# Usage
-result = await upload_file(
-    bucket="users",
-    key="123e4567/media/video.mp4",
-    file_path=Path("video.mp4"),
-    jwt_token="your-jwt-token"
-)
-print(f"Uploaded: {result['hash']}")
-```
+Supports:
+- full download
+- HTTP Range requests
+- cache-related headers
+- content-disposition when configured
 
-**Error Responses:**
-
-- `400 Bad Request` - Empty body
-- `401 Unauthorized` - Invalid or missing authentication
-- `402 Payment Required` - Quota exceeded
-- `500 Internal Server Error` - Upload failed
-
----
-
-### Download Object
-
-Download a file from storage.
-
-**Endpoint:** `GET /:bucket/:key`
-
-**Authentication:** Required
-
-**Parameters:**
-- `bucket` (path) - Bucket name
-- `key` (path) - Object key/path
-
-**Response:** `200 OK` with file content
-
-**Headers:**
-- `Content-Type` - MIME type of the file
-- `Content-Length` - File size in bytes
-
-**Example:**
+**Example**:
 
 ```bash
-# Download a file
-curl -H "Authorization: Bearer <token>" \
-  http://localhost:7990/users/123e4567/media/video.mp4 \
-  -o downloaded_video.mp4
+curl -H "Authorization: Bearer $TOKEN" \
+    http://localhost:7990/users/user-123/images/example.png \
+    -o example.png
 ```
 
-```python
-import httpx
+### `HEAD /:bucket/*`
 
-async def download_file(
-    bucket: str,
-    key: str,
-    jwt_token: str,
-    output_path: Path
+Metadata-only lookup for an object.
+
+Useful for existence checks, size lookups, and cached clients.
+
+### `DELETE /:bucket/*`
+
+Delete an object.
+
+**Example**:
+
+```bash
+curl -X DELETE \
+    -H "Authorization: Bearer $TOKEN" \
+    http://localhost:7990/users/user-123/images/example.png
+```
+
+### `GET /:bucket?list=true`
+
+List objects in a bucket.
+
+Common query parameters in current usage:
+- `prefix`
+- pagination-related values where supported by the running build
+
+### `POST /:bucket/*?action=move`
+
+Move or rename an object.
+
+**Request body**:
+
+```json
+{
+    "dest_bucket": "users",
+    "dest_key": "user-123/images/folder/example.png"
+}
+```
+
+If `dest_bucket` is omitted, the source bucket is reused.
+
+This operation is used by higher-level media organization features.
+
+## Signed URLs
+
+Signed URLs provide time-limited access without requiring the caller to send the bearer token directly.
+
+Typical behavior:
+- validated with HMAC-SHA256 signing secret
+- bound to expiration
+- intended for controlled public/shareable reads
+
+## Retention and Expiration
+
+The backend decides retention policy and passes expiration metadata via `X-Expires-At`.
+
+Storage responsibilities:
+- persist expiration metadata
+- expose GC information
+- remove expired objects during collection
+
+## Range and Caching Support
+
+The storage API supports browser/media-friendly behavior including:
+- `Range` requests
+- `ETag`
+- `Cache-Control`
+- `Content-Disposition`
+
+This matters for video seeking, resumable clients, and CDN/browser caching behavior.
+
+## Webhooks
+
+Storage can emit webhook events for uploads, deletes, quota changes, expiring files, and GC completion. See runtime configuration for webhook endpoints and signing configuration.
+
+## Error Shapes
+
+The exact body depends on the endpoint, but common statuses include:
+
+- `400 Bad Request`
+- `401 Unauthorized`
+- `403 Forbidden`
+- `404 Not Found`
+- `409 Conflict`
+- `500 Internal Server Error`
+
+## Integration Notes
+
+For Oelala-style integrations:
+
+- use bearer auth, not `X-Api-Key`
+- push retention via `X-Expires-At`
+- use move/rename rather than downloading and re-uploading when reorganizing media
+- prefer streaming uploads for large files instead of reading everything into memory first
 ):
     url = f"http://localhost:7990/{bucket}/{key}"
     headers = {"Authorization": f"Bearer {jwt_token}"}

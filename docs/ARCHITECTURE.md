@@ -1,223 +1,200 @@
 # System Architecture
 
-This document describes the architecture and design of the oelala-storage service.
+This document describes the current architecture of `oelala-storage` as of March 2026.
 
 ## Overview
 
-**oelala-storage** is a distributed, content-addressed storage service designed for the oelala AI media platform. It provides S3-compatible object storage with built-in quota management, usage metering, and peer-to-peer synchronization capabilities.
+`oelala-storage` is a Go-based object storage service focused on media-heavy workloads. It provides a simple HTTP API, metadata + dedup tracking, signed/public access patterns, retention execution, and the foundation for a multi-node storage network.
+
+The design principle is intentionally simple:
+
+> The backend decides policy. Storage executes object operations reliably.
 
 ## Design Goals
 
-1. **Local-first**: Operate independently on user devices without cloud dependency
-2. **Performance**: Handle large media files (100GB+) efficiently
-3. **Cross-platform**: Single binary deployment on Windows, Linux, and Android
-4. **Distributed**: Peer-to-peer sync between user devices
-5. **Monetization-ready**: Built-in quota tracking and usage metering
-6. **Simple**: S3-compatible API for easy integration
+1. **Storage stays dumb**: no business logic about user tiers or product behavior
+2. **Media-friendly**: large uploads, ranged reads, cache headers, content-disposition
+3. **Cross-platform**: Windows and Linux support only
+4. **Node-aware**: ready for coordinator + replica topology
+5. **Auditable**: metrics, metering, webhooks, admin surfaces
+6. **Composable**: easy to integrate from other services over HTTP
 
-## High-Level Architecture
+## High-Level Topology
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    oelala Backend                        │
-│                   (Python/FastAPI)                       │
-│                      Port 7998                           │
-└────────────────────────┬────────────────────────────────┘
-                         │
-                         │ HTTP API (S3-compatible)
-                         │ JWT Authentication
-                         │
-┌────────────────────────▼────────────────────────────────┐
-│              oelala-storage (Go Service)                 │
-│                                                          │
-│  ┌────────────────────────────────────────────────┐     │
-│  │           HTTP API Server (Fiber)              │     │
-│  │              Port 7990                         │     │
-│  └────────────┬──────────────┬────────────────────┘     │
-│               │              │                           │
-│    ┌──────────▼──────┐  ┌───▼──────────┐                │
-│    │  Auth Middleware │  │   Metrics    │                │
-│    │  (JWT/API Key)   │  │  Middleware  │                │
-│    └──────────┬───────┘  └───┬──────────┘                │
-│               │              │                           │
-│    ┌──────────▼──────────────▼──────────┐                │
-│    │        Request Handlers            │                │
-│    │  (PUT/GET/DELETE/HEAD/LIST)        │                │
-│    └──────────┬──────────────────────────┘                │
-│               │                                          │
-│  ┌────────────▼─────────────────────────────────────┐    │
-│  │              Core Storage Layer                  │    │
-│  │                                                  │    │
-│  │  ┌──────────────┐  ┌─────────────┐              │    │
-│  │  │   BadgerDB   │  │ File Store  │              │    │
-│  │  │  (metadata)  │  │ (SHA-256    │              │    │
-│  │  │              │  │  content)   │              │    │
-│  │  └──────────────┘  └─────────────┘              │    │
-│  │                                                  │    │
-│  │  ┌──────────────┐  ┌─────────────┐              │    │
-│  │  │ Quota        │  │  Metering   │              │    │
-│  │  │ Tracker      │  │  Service    │              │    │
-│  │  └──────────────┘  └─────────────┘              │    │
-│  └──────────────────────────────────────────────────┘    │
-│                                                          │
-│  ┌──────────────────────────────────────────────────┐    │
-│  │         Sync Layer (gRPC - Port 7991)            │    │
-│  │                                                  │    │
-│  │  ┌──────────────┐  ┌─────────────┐              │    │
-│  │  │  Peer        │  │ Replication │              │    │
-│  │  │  Discovery   │  │  Engine     │              │    │
-│  │  │  (mDNS)      │  │             │              │    │
-│  │  └──────────────┘  └─────────────┘              │    │
-│  └──────────────────────────────────────────────────┘    │
-│                                                          │
-│  ┌──────────────────────────────────────────────────┐    │
-│  │         Observability (Port 7992)                │    │
-│  │                                                  │    │
-│  │  ┌──────────────┐  ┌─────────────┐              │    │
-│  │  │  Prometheus  │  │    Zap      │              │    │
-│  │  │   Metrics    │  │   Logging   │              │    │
-│  │  └──────────────┘  └─────────────┘              │    │
-│  └──────────────────────────────────────────────────┘    │
-└──────────────────────────────────────────────────────────┘
-                         │
-                         │ P2P Sync (gRPC)
-                         ▼
-              ┌──────────────────────┐
-              │   Peer Nodes         │
-              │  (User Devices)      │
-              └──────────────────────┘
+Application / Backend
+      │
+      │  Authorization: Bearer <token>
+      ▼
+┌──────────────────────────────────────────────────────────────┐
+│                  oelala-storage HTTP API                    │
+│                         Port 7990                           │
+├──────────────────────────────────────────────────────────────┤
+│ Middleware                                                  │
+│  • auth / permission checks                                 │
+│  • CORS                                                     │
+│  • metrics                                                  │
+│  • request logging / recovery                               │
+├──────────────────────────────────────────────────────────────┤
+│ Handlers                                                    │
+│  • PUT / GET / HEAD / DELETE / LIST                         │
+│  • POST move                                                │
+│  • signed URL validation                                    │
+│  • admin + status endpoints                                 │
+├──────────────────────────────────────────────────────────────┤
+│ Core Storage                                                │
+│  • filesystem object store                                  │
+│  • Badger metadata                                          │
+│  • dedup references                                         │
+│  • quota / metering hooks                                   │
+│  • retention / GC                                           │
+│  • webhook dispatch                                         │
+├──────────────────────────────────────────────────────────────┤
+│ Distributed Layer                                           │
+│  • gRPC sync                                                │
+│  • replication                                              │
+│  • coordinator heartbeat client                             │
+│  • future node routing / placement                          │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-## Component Details
+## Runtime Components
 
-### HTTP API Server
+### HTTP API
 
-**Technology:** GoFiber web framework
+**Technology**: Fiber
 
-**Port:** 7990 (HTTP) or with TLS enabled
+**Responsibilities**:
+- upload/download/delete/head/list objects
+- move/rename objects via POST action
+- apply auth and permission checks
+- expose status/admin endpoints
+- handle Range requests and cache-related headers
 
-**Responsibilities:**
-- Handle S3-compatible HTTP requests
-- Route requests to appropriate handlers
-- Apply middleware (auth, metrics, CORS, logging)
-- Stream large file uploads/downloads
-- Graceful shutdown on SIGINT/SIGTERM
+### Metadata + Dedup
 
-**Key Features:**
-- 100GB max upload size
-- CORS support for web clients
-- Request logging
-- Panic recovery
-- TLS/SSL support (optional)
+**Technology**: BadgerDB + filesystem
 
-**Middleware Stack:**
-1. **Recovery** - Panic recovery
-2. **Logger** - Request logging
-3. **CORS** - Cross-origin support
-4. **Auth** - JWT/API key validation
-5. **Metrics** - Prometheus metrics collection
+**Responsibilities**:
+- map logical bucket/key references to physical blobs
+- maintain reference counts for content-addressed storage
+- support safe delete/move semantics
+- store metadata needed for listing, retention, and signed access
 
-### Authentication & Authorization
+### GC / Retention
 
-**Package:** `internal/auth`
+Retention is driven by upstream services through `X-Expires-At` metadata.
 
-**Supported Methods:**
-1. **Bearer Token** (JWT from Supabase)
-   - Validates JWT signature
-   - Extracts user context (user_id, tier, roles)
-   - Checks token expiration
+Storage responsibilities:
+- persist expiration metadata
+- expose GC stats/status
+- delete expired objects when collected
 
-2. **API Key**
-   - Static key validation
-   - Constant-time comparison
-   - Configured in config file
+### Signed URLs
 
-**User Context:**
-```go
-type UserContext struct {
-    UserID    string
-    TierID    string    // free, creator, pro, studio
-    Roles     []string
-    ExpiresAt time.Time
-}
+Signed URLs provide time-limited access for public/share scenarios without turning the whole bucket public.
+
+### Webhooks
+
+Webhook notifications are emitted for events such as:
+- `file.uploaded`
+- `file.deleted`
+- `quota.warning`
+- `quota.exceeded`
+- `file.expiring`
+- `gc.completed`
+
+Webhook delivery uses async dispatch, retry/backoff, and HMAC-SHA256 signing.
+
+## Authentication Model
+
+### Object API
+
+Normal application access uses:
+
+```http
+Authorization: Bearer <token>
 ```
 
-**Authorization Middleware:**
-- `RequireRole(role)` - Check for specific role
-- `RequireTier(minTier)` - Check minimum subscription tier
+This can represent either an application/service token or another approved bearer token format handled by the auth middleware.
 
-**Skip Paths:**
-- `/health`
-- `/status`
+### Admin API
 
-### Storage Layer
+Administrative surfaces use:
 
-**Package:** `internal/storage`
-
-**Storage Strategy:** Content-addressed storage using SHA-256
-
-**Directory Structure:**
-```
-data/
-├── objects/
-│   ├── a1/
-│   │   └── b2c3d4.../  (SHA-256 hash-based paths)
-│   └── e5/
-│       └── f6g7h8.../
-└── metadata.db/  (BadgerDB)
+```http
+X-Admin-Secret: <secret>
 ```
 
-**Key Operations:**
+### Permission Model
 
-#### Put (Upload)
-1. Read file content
-2. Compute SHA-256 hash
-3. Detect content type (magic bytes + extension)
-4. Store file at hash-based path
-5. Update metadata in BadgerDB
-6. Record metering event
-7. Return object metadata
+The HTTP layer distinguishes between reader and writer capabilities:
+- `GET`, `HEAD`, `LIST` require read-style permission
+- `PUT`, `DELETE`, `POST action=move` require write-style permission
 
-#### Get (Download)
-1. Lookup metadata by bucket/key
-2. Retrieve file from hash-based path
-3. Stream content to client
-4. Record download event
+Compatibility aliases for `read/write` and `reader/writer` are supported.
 
-#### Delete
-1. Lookup metadata
-2. Delete metadata entry
-3. Delete file (if not referenced elsewhere)
-4. Record delete event
+## Storage Operations
 
-#### List
-1. Scan metadata for bucket/prefix
-2. Return matching objects
-3. Include size, hash, content-type
+### Upload Path
 
-**Content Type Detection:**
-- Primary: Magic bytes (file header inspection)
-- Fallback: File extension mapping
-- Override: Client-provided Content-Type header
+1. Authenticate request
+2. Parse bucket and object key
+3. Detect content type if needed
+4. Store object bytes
+5. Update metadata / dedup references
+6. Update metering / quota state
+7. Emit webhook where applicable
 
-### Metadata Store
+### Read Path
 
-**Technology:** BadgerDB (embedded key-value store)
+1. Authenticate request or validate signed URL
+2. Resolve bucket/key metadata
+3. Serve full or ranged content
+4. Attach cache, ETag, and content-disposition headers as applicable
+5. Record metrics/metering
 
-**Why BadgerDB:**
-- Embedded (no external dependencies)
-- High performance (LSM tree)
-- ACID transactions
-- Small binary size
-- Cross-platform
+### Move Path
 
-**Schema:**
-```
-Key: bucket:key
-Value: {
-  "hash": "sha256:...",
-  "size": 1048576,
-  "content_type": "video/mp4",
+1. Authenticate write access
+2. Resolve source object
+3. Move logical reference and/or filesystem object
+4. Preserve dedup correctness when overwriting or re-pointing references
+
+## Distributed Direction
+
+The current architecture is evolving from a single primary storage service toward a coordinator-plus-node model.
+
+### Active Pieces
+- coordinator client with heartbeat payloads
+- node config including `public_url`
+- gRPC sync infrastructure
+- static peer sync support
+
+### Current Real-World Shape
+
+| Node | Role | Notes |
+|------|------|-------|
+| storage-main | coordinator / primary | main public entrypoint |
+| storage-node-01 | local extra node | separate local service + ports |
+| storage-node-02 | remote node | independent tunnel and host |
+
+## Observability
+
+Metrics are exposed on the configured metrics port.
+
+Important signals include:
+- request counts and latency
+- object totals and storage bytes
+- sync activity
+- quota state
+- GC and dedup statistics
+
+## Platform Policy Notes
+
+- Supported platforms: **Windows and Linux only**
+- Android, macOS, iOS are out of scope
+- Storage should not absorb backend-only concerns such as user management or subscription logic
   "created_at": "2026-01-12T10:30:00Z"
 }
 ```

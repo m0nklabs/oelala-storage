@@ -1,186 +1,194 @@
 # oelala-storage
 
-**Distributed Storage Network for AI-Generated Content**
-
-> Fast, scalable, self-hosted storage with multi-node replication.
+Distributed object storage for AI-generated media, built for self-hosted and multi-node deployments.
 
 ---
 
-## 🎯 What is oelala-storage?
+## What it is
 
-oelala-storage is a **standalone distributed storage system** designed for:
+`oelala-storage` is a standalone Go service that provides:
 
-- **AI/ML workloads** - Optimized for large media files (videos, images)
-- **Self-hosted deployments** - Run on your own hardware
-- **Multi-node replication** - 2x/3x redundancy across nodes
-- **Simple integration** - REST API + gRPC for any application
+- S3-style object operations over a simple HTTP API
+- content-addressed deduplication with metadata tracking
+- quota and metering hooks for upstream applications
+- retention execution via `X-Expires-At`
+- signed URLs for controlled public access
+- webhook notifications for storage events
+- multi-node coordination and replication groundwork
 
-While originally built for [oelala.ai](https://oelala.ai), it's designed as a **general-purpose storage product** that can be used by any project.
+It started as the storage backend for Oelala, but the design goal is broader: a reusable storage service for media-heavy applications.
 
 ---
 
-## 🚀 Quick Start
+## Current Deployment Shape
 
-### Single Node (Development)
+| Node | Role | Hostname | Ports | Data Path |
+|------|------|----------|-------|-----------|
+| storage-main | coordinator / primary | `storage-main.oelala.xyz` | HTTP 7990, gRPC 7991, metrics 7992 | `/home/flip/oelala-main-data` or active configured path |
+| storage-node-01 | additional local node | `storage-node-01.oelala.xyz` | HTTP 7993, gRPC 7994, metrics 7995 | `/home/flip/oelala-storage-data` |
+| storage-node-02 | remote node | `storage2.oelala.xyz` | node-local config | remote host data path |
+
+Each node is expected to operate independently, including its own Cloudflare tunnel where applicable.
+
+---
+
+## Quick Start
+
+### Build
 
 ```bash
-# Download
-curl -LO https://github.com/m0nklabs/oelala-storage/releases/latest/download/oelala-storage-linux-amd64
-chmod +x oelala-storage-linux-amd64
-
-# Run
-./oelala-storage-linux-amd64 serve --data-dir ./data
+go build -o bin/oelala-storage ./cmd/oelala-storage
 ```
 
-### Docker
+### Run
 
 ```bash
-docker run -d \
-  -p 7990:7990 \
-  -v /path/to/data:/data \
-  ghcr.io/m0nklabs/oelala-storage:latest
+./bin/oelala-storage serve
 ```
 
-### Configuration
+### Example Configuration
 
 ```yaml
-# oelala-storage.yaml
-server:
-  http_port: 7990
-  grpc_port: 7991
-  metrics_port: 7992
+node:
+  id: "oelala-main"
+  name: "Oelala Primary Storage"
+  type: primary
+  public_url: "https://storage-main.oelala.xyz"
 
 storage:
-  data_dir: /data
+  path: "/home/flip/oelala-storage-data"
   max_size_gb: 500
+  cache_size_mb: 2048
 
-auth:
-  admin_key: "your-admin-key"  # For Web UI access
+api:
+  http_port: 7990
+  grpc_port: 7991
+  enable_tls: false
+
+metrics:
+  enabled: true
+  port: 7992
+
+security:
+  admin_secret: "change-me"
+  signing_secret: "change-me"
+  auth_tokens:
+    - name: "backend"
+      token: "change-me"
+      permissions: ["read", "write", "delete"]
+
+coordinator:
+  enabled: true
+  url: "http://localhost:7998"
+  api_key: "change-me"
+  heartbeat_secs: 60
 ```
 
 ---
 
-## 🏗️ Architecture
+## Architecture Highlights
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    oelala-storage Server                        │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
-│  │  REST API   │  │  gRPC API   │  │  Web UI (Admin)         │  │
-│  │  :7990      │  │  :7991      │  │  :7990/admin            │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
-│         │               │                    │                  │
-│         └───────────────┴────────────────────┘                  │
-│                         │                                       │
-│  ┌──────────────────────┴──────────────────────────────────────┐│
-│  │                    Core Services                            ││
-│  │  • Storage Engine (BadgerDB metadata + filesystem)          ││
-│  │  • Bucket Management (user isolation, quotas)               ││
-│  │  • API Key Auth (per-bucket or admin keys)                  ││
-│  │  • Metrics (Prometheus)                                     ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                 │
-├─────────────────────────────────────────────────────────────────┤
-│  DISTRIBUTED MODE (optional)                                    │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
-│  │ Coordinator │  │ Replicator  │  │  Node Discovery         │  │
-│  │             │  │             │  │                         │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
+Client / Backend
+      │
+      ▼
+HTTP API (:7990 / node-local equivalent)
+  ├─ Auth / permission middleware
+  ├─ Object handlers (PUT, POST move, GET, DELETE, HEAD, LIST)
+  ├─ Range / cache / content-disposition support
+  ├─ Signed URL validation
+  └─ Webhook dispatch
+
+Storage Core
+  ├─ Filesystem object store
+  ├─ Badger-backed metadata and dedup references
+  ├─ Quota + metering updates
+  ├─ Retention / GC execution
+  └─ Metrics
+
+Distributed Layer
+  ├─ gRPC sync
+  ├─ peer replication
+  ├─ coordinator heartbeat/client
+  └─ future placement + node routing
 ```
 
 ---
 
-## 📚 Documentation
+## Key Features
+
+### Object Storage
+- `PUT /:bucket/*` upload
+- `GET /:bucket/*` download with Range support
+- `HEAD /:bucket/*` metadata lookup
+- `DELETE /:bucket/*` delete
+- `GET /:bucket?list=true` listing with pagination support
+- `POST /:bucket/*?action=move` move/rename objects
+
+### Data Management
+- content-addressed deduplication
+- garbage collection of expired content
+- retention metadata via `X-Expires-At`
+- signed URLs for public/shareable reads
+
+### Operations
+- Prometheus metrics
+- admin API / UI hooks
+- webhook notifications for file and quota events
+- self-hosted runner-friendly CI/CD
+
+---
+
+## Authentication
+
+### Application/API access
+
+Use a bearer token:
+
+```http
+Authorization: Bearer <token>
+```
+
+This is the canonical auth header for storage clients and backend integrations.
+
+### Admin endpoints
+
+Use the admin secret header:
+
+```http
+X-Admin-Secret: <secret>
+```
+
+### Important
+
+- Do **not** use `X-Api-Key` for normal object API access.
+- Permission middleware accepts reader/writer style permissions and compatible read/write names.
+
+---
+
+## Documentation
 
 | Document | Description |
 |----------|-------------|
-| [Product Vision](docs/PRODUCT_VISION.md) | Why oelala-storage exists |
-| [API Reference](docs/API.md) | REST & gRPC API documentation |
-| [Architecture](docs/ARCHITECTURE.md) | System design overview |
-| [Distributed Mode](docs/DISTRIBUTED_ARCHITECTURE.md) | Multi-node setup |
-| [Integration Guide](docs/INTEGRATION.md) | Integrating with your app |
+| [docs/API.md](docs/API.md) | HTTP API reference |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Storage internals and topology |
+| [docs/DISTRIBUTED_ARCHITECTURE.md](docs/DISTRIBUTED_ARCHITECTURE.md) | Multi-node direction |
+| [docs/INTEGRATION.md](docs/INTEGRATION.md) | Backend integration patterns |
+| [docs/VISION.md](docs/VISION.md) | Canonical architecture/product intent |
 
 ---
 
-## 🔌 API Overview
-
-### Upload a file
+## Development
 
 ```bash
-curl -X PUT "http://localhost:7990/files/my-bucket/video.mp4" \
-  -H "X-API-Key: your-api-key" \
-  -H "Content-Type: video/mp4" \
-  --data-binary @video.mp4
-```
-
-### Download a file
-
-```bash
-curl "http://localhost:7990/files/my-bucket/video.mp4" \
-  -H "X-API-Key: your-api-key" \
-  -o video.mp4
-```
-
-### List files
-
-```bash
-curl "http://localhost:7990/files/my-bucket/?list=true" \
-  -H "X-API-Key: your-api-key"
-```
-
----
-
-## 🔐 Authentication
-
-oelala-storage supports multiple authentication modes:
-
-| Mode | Use Case |
-|------|----------|
-| **Admin Key** | Full access, Web UI, management |
-| **Bucket API Keys** | Per-bucket access for applications |
-| **Service Keys** | Internal service-to-service auth |
-
----
-
-## 📊 Monitoring
-
-Prometheus metrics exposed on `:7992/metrics`:
-
-- `storage_bytes_total` - Total storage used
-- `storage_files_total` - Number of files
-- `storage_requests_total` - Request count by operation
-- `storage_request_duration_seconds` - Request latency
-
----
-
-## 🛠️ Development
-
-```bash
-# Build
-make build
-
-# Test
 make test
-
-# Run locally
-make run
+make build
 ```
 
----
-
-## 📄 License
-
-MIT License - See [LICENSE](LICENSE) for details.
+For production-like usage, run the built binary via systemd rather than ad-hoc shell sessions.
 
 ---
 
-## 🤝 Contributing
+## License
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
----
-
-**Built with ❤️ for the AI generation community**
+MIT. See [LICENSE](LICENSE).
