@@ -1,0 +1,18 @@
+[Unit]
+Description=oelala-storage auto-update check
+Documentation=https://github.com/m0nklabs/oelala-storage
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=flip
+Group=flip
+ExecStart=/home/flip/oelala-storage/deploy/auto-update.sh
+Environment=HOME=/home/flip
+Environment=PATH=/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=oelala-storage-autoupdate

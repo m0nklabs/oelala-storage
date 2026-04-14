@@ -1,0 +1,12 @@
+[Unit]
+Description=Check for oelala-storage updates every 15 minutes
+Documentation=https://github.com/m0nklabs/oelala-storage
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+RandomizedDelaySec=60
+Persistent=true
+
+[Install]
+WantedBy=timers.target
